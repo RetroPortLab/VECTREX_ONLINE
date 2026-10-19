@@ -1,0 +1,11 @@
+# Render Blueprint: New -> Blueprint, point it at this repo, and it creates the service.
+services:
+  - type: web
+    name: vectrex-netlink
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeploy: true

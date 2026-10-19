@@ -1,0 +1,16 @@
+{
+  "name": "vectrex-netlink-relay",
+  "version": "1.0.0",
+  "description": "Relay and live dashboard for two Vectrex consoles linked over the internet",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}
