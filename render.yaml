@@ -9,3 +9,7 @@ services:
     startCommand: node server.js
     healthCheckPath: /healthz
     autoDeploy: true
+    envVars:
+      # Neon connection string (see README): accounts and scores live there. Without it they are in memory.
+      - key: DATABASE_URL
+        sync: false

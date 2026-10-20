@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play — Retro Port Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2307090b'/%3E%3Cpath d='M16 6 L24 24 L8 24 Z' fill='none' stroke='%239ff7ff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<style>
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 16px; margin: 0; }
+  .kv dt { color: var(--dim); } .kv dd { margin: 0; text-align: right; }
+  .good { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  #log { height: 180px; overflow: auto; font-size: 12px; color: var(--dim); white-space: pre-wrap; margin: 0; }
+  .steps { margin: 0; padding-left: 20px; color: var(--dim); } .steps li { margin: 4px 0; }
+  .who { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .who input { max-width: 190px; }
+  .bar { height: 6px; background: #121a20; border-radius: 3px; overflow: hidden; margin-top: 6px; } .bar i { display: block; height: 100%; background: var(--p1); width: 0; }
+</style>
+</head><body>
+<main class="page">
+<h1>Play</h1>
+<p class="lead">Plug your Vectrex console into this computer and play over the internet, right from this page. No app to install.</p>
+
+<div id="nosupport" class="banner" hidden></div>
+
+<div id="setup">
+  <div class="cols">
+    <div class="panel">
+      <h2 style="margin-top:0">1 · You</h2>
+      <div id="whoBox"></div>
+      <h2>2 · Room</h2>
+      <input type="text" id="room" maxlength="32" spellcheck="false" autocomplete="off" placeholder="arena">
+      <p class="note">Everyone in the same room plays together. Leave it empty for the default.</p>
+      <div class="row" style="margin-top:14px"><button class="primary" id="go">Connect console</button><span id="err" class="err" style="margin:0"></span></div>
+      <p class="note" id="remembered"></p>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">What you need</h2>
+      <ol class="steps">
+        <li>A Vectrex with the UVMC2 cartridge, running <a href="/games/vecstrike">VEC STRIKE</a> or the <a href="/games/linktest">Link Test</a>, built with the USB monitor on.</li>
+        <li>A USB cable from the cartridge to this computer.</li>
+        <li>Chrome, Edge or Opera on a desktop. When you press Connect, pick the cartridge in the list.</li>
+        <li>Keep this tab open while you play. Close VectrexBridge and the IDE's debugger first: only one program can hold the cart.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div id="live" hidden>
+  <div class="row" style="margin-bottom:14px"><b id="title">Connecting…</b><span id="tag"></span><span style="flex:1"></span><a class="btn" id="watch" href="/watch" target="_blank">Watch this room</a><button id="stop">Disconnect</button></div>
+  <div id="scanBox" class="panel" hidden><div id="scanText">Looking for the game in the cartridge's RAM…</div><div class="bar"><i id="scanBar"></i></div>
+    <p class="note" style="margin-bottom:0">This takes a few seconds the first time, only when the game hasn't announced where it is.</p></div>
+  <div class="cols">
+    <div class="panel"><h2 style="margin-top:0">Console</h2><dl class="kv" id="cartKv"></dl></div>
+    <div class="panel"><h2 style="margin-top:0">Network</h2><dl class="kv" id="netKv"></dl></div>
+  </div>
+  <div id="scores" class="panel" style="margin-top:16px" hidden><h2 style="margin-top:0">Room scoreboard</h2><div class="scroll"><table id="board"></table></div></div>
+  <h2>Log</h2><div class="panel"><pre id="log"></pre></div>
+</div>
+</main>
+<script src="/site.js"></script>
+<script src="/webbridge.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const { VID, PID } = WebBridgeParts;
+  const LS = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private window */ } } };
+  let bridge = null, wake = null;
+
+  if (!window.isSecureContext || !('serial' in navigator)) {
+    const b = $('nosupport'); b.hidden = false;
+    b.textContent = !window.isSecureContext ? 'This page needs https:// to reach your console.'
+      : 'This browser can\'t talk to USB devices. Use Chrome, Edge or Opera on a desktop computer, or the VectrexBridge app for Windows.';
+    $('go').disabled = true;
+  }
+
+  // ---- who you are ----
+  ME.ready.then(() => {
+    if (ME.user) {
+      $('whoBox').innerHTML = `<div class="who">You fly as <b style="color:var(--p2)">${esc(ME.user.callsign)}</b> <span class="note">(@${esc(ME.user.username)}) — your rounds count on the leaderboards</span></div>`;
+    } else {
+      $('whoBox').innerHTML = `<label style="margin-top:0">Your name on the scoreboard</label><input type="text" id="name" maxlength="8" autocomplete="nickname" placeholder="PILOT">
+        <p class="note">Playing as a guest: your rounds aren't ranked. <a href="/login?next=/play">Sign in</a> or <a href="/register?next=/play">create an account</a> to be on the leaderboards.</p>`;
+      $('name').value = LS.get('rpl_name') || '';
+    }
+  });
+  $('room').value = params.get('room') || LS.get('rpl_room') || '';
+
+  // ---- the port ----
+  async function pickPort() {
+    const filters = [{ usbVendorId: VID, usbProductId: PID }];
+    const known = (await navigator.serial.getPorts()).filter((p) => { const i = p.getInfo(); return i.usbVendorId === VID && i.usbProductId === PID; });
+    if (known.length === 1 && !pickPort.forceNew) return known[0];
+    return navigator.serial.requestPort({ filters });
+  }
+
+  function say(s) { const el = $('log'); el.textContent += (el.textContent ? '\n' : '') + new Date().toLocaleTimeString() + '  ' + s; el.scrollTop = el.scrollHeight; }
+
+  $('go').onclick = async () => {
+    $('err').textContent = '';
+    await ME.ready;
+    let name = ME.user ? ME.user.callsign : ($('name').value || '').replace(/[^\w .-]/g, '').trim().slice(0, 8);
+    if (!ME.user) { if (!name) { $('err').textContent = 'Type a name first.'; return; } LS.set('rpl_name', name); }
+    const room = $('room').value.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
+    LS.set('rpl_room', room);
+    let port;
+    try { port = await pickPort(); }
+    catch (e) { $('err').textContent = e.name === 'NotFoundError' ? 'No cartridge chosen. Is it plugged in and running a game?' : e.message; return; }
+    $('setup').hidden = true; $('live').hidden = false; $('log').textContent = '';
+    $('watch').href = '/watch?room=' + encodeURIComponent(room || 'arena');
+    try { wake = await navigator.wakeLock?.request('screen'); } catch { /* optional */ }
+    bridge = new WebBridge({ port, room, name, log: say, onStatus: show,
+      onScan: (f) => { $('scanBox').hidden = f >= 1; $('scanBar').style.width = (f * 100).toFixed(0) + '%'; } });
+    bridge.start().then(() => { $('title').textContent = 'Disconnected'; });
+  };
+  $('stop').onclick = async () => {
+    if (bridge) await bridge.stop();
+    bridge = null; try { wake?.release(); } catch { /* ok */ }
+    $('live').hidden = true; $('setup').hidden = false; $('remembered').textContent = 'Disconnected. Press Connect to go again.';
+  };
+
+  // ---- the status ----
+  const kv = (rows) => rows.map(([k, v, c]) => `<dt>${esc(k)}</dt><dd class="${c || ''}">${esc(v)}</dd>`).join('');
+  const GAME = { strike: 'VEC STRIKE', netlink: 'Link Test' };
+  function show(s) {
+    const ok = s.cart === 'ok';
+    $('title').textContent = s.game ? `${GAME[s.game]} · room ${s.room || '…'}` : 'Connecting…';
+    $('tag').innerHTML = s.net === 'connected' ? '<span class="tag live">online</span>' : `<span class="tag">${esc(s.net)}</span>`;
+    if (s.game) $('scanBox').hidden = true;
+    $('cartKv').innerHTML = kv([
+      ['Cartridge', ok ? 'ok' : s.cart, ok ? 'good' : s.cart === 'connecting' ? '' : 'bad'], ['Firmware', s.fw || '–'], ['Game', GAME[s.game] || '–'],
+      ['USB request', s.usb_ms ? s.usb_ms.toFixed(1) + ' ms' : '–', s.usb_ms > 15 ? 'warn' : ''], ['Polls', s.poll_hz + ' /s'], ['Game frames', s.game_hz + ' /s', s.game_hz && s.game_hz < 40 ? 'warn' : '']]);
+    $('netKv').innerHTML = kv([
+      ['Relay', s.net, s.net === 'connected' ? 'good' : s.net.startsWith('error') ? 'bad' : ''], ['Playing as', s.account ? '@' + s.account : 'guest'],
+      [s.game === 'strike' ? 'Pilots here' : 'Consoles here', s.peers], ['Round trip', s.rtt == null ? '–' : s.rtt + ' ms'],
+      ['Sent', s.sent_hz + ' /s'], ['Received', s.rx_hz + ' /s'], ['Your score', s.score ? `${s.score[0]} kills · ${s.score[1]} deaths` : '–']]);
+    $('scores').hidden = !(s.game === 'strike' && s.roster.length);
+    if (s.game === 'strike' && s.roster.length) {
+      const rows = [...s.roster].sort((a, b) => b[2] - a[2] || a[3] - b[3]);
+      $('board').innerHTML = '<tr><th>#</th><th>Pilot</th><th>Kills</th><th>Deaths</th></tr>' + rows.map((p, i) =>
+        `<tr class="${p[0] === s.slot ? 'me' : ''}"><td>${i + 1}</td><td>${esc(String(p[4]).trim())}${p[1] & 8 ? ' <span class="note">BOT</span>' : ''}</td><td class="big">${p[2]}</td><td>${p[3]}</td></tr>`).join('');
+    }
+  }
+  window.addEventListener('beforeunload', () => { if (bridge) bridge.stop(); });
+})();
+</script>
+</body></html>

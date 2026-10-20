@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Retro Port Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2307090b'/%3E%3Cpath d='M16 6 L24 24 L8 24 Z' fill='none' stroke='%239ff7ff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head><body>
+<main class="page">
+<h1 id="title">Sign in</h1>
+<p class="lead">An account keeps your callsign and scores. It is only needed for the leaderboards: guests can play too.</p>
+<div class="panel form"><form id="f">
+<label>Username</label><input type="text" id="u" autocomplete="username" maxlength="16" required>
+<div id="csrow" hidden><label>Callsign (shown on your ship, up to 8 letters or digits)</label><input type="text" id="c" maxlength="8" autocomplete="off"></div>
+<label>Password</label><input type="password" id="p" autocomplete="current-password" minlength="8" required>
+<p class="err" id="err"></p>
+<div class="row"><button class="primary" id="go">Sign in</button><a href="#" id="swap">Create an account</a></div></form></div>
+</main>
+<script src="/site.js"></script>
+<script>
+
+let reg = location.pathname === '/register';
+const $ = (id) => document.getElementById(id);
+function mode() {
+  $('title').textContent = reg ? 'Create an account' : 'Sign in';
+  $('go').textContent = reg ? 'Create account' : 'Sign in';
+  $('swap').textContent = reg ? 'I have an account' : 'Create an account';
+  $('csrow').hidden = !reg;
+  $('p').autocomplete = reg ? 'new-password' : 'current-password';
+}
+mode();
+$('swap').onclick = (e) => { e.preventDefault(); reg = !reg; mode(); };
+$('f').onsubmit = async (e) => {
+  e.preventDefault();
+  $('err').textContent = '';
+  try {
+    await api(reg ? '/api/register' : '/api/login', { username: $('u').value, password: $('p').value, callsign: $('c').value });
+    const next = params.get('next');
+    location.href = next && next.startsWith('/') && !next.startsWith('//') ? next : '/';
+  } catch (x) { $('err').textContent = x.message; }
+};
+</script>
+</body></html>

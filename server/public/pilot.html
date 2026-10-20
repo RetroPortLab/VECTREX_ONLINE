@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pilot — Retro Port Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2307090b'/%3E%3Cpath d='M16 6 L24 24 L8 24 Z' fill='none' stroke='%239ff7ff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head><body>
+<main class="page">
+<div id="head"></div><div id="games"></div><h2>Recent rounds</h2><div class="panel" id="rounds"></div>
+</main>
+<script src="/site.js"></script>
+<script>
+
+(async () => {
+  const name = decodeURIComponent(location.pathname.split('/')[2]);
+  let p;
+  try { p = await api('/api/pilots/' + encodeURIComponent(name)); } catch (e) { document.getElementById('head').innerHTML = `<h1>${esc(e.message)}</h1>`; return; }
+  const s = await api('/api/site');
+  document.title = p.user.callsign + ' — Retro Port Lab';
+  document.getElementById('head').innerHTML = `<h1>${esc(p.user.callsign)}</h1><p class="lead">@${esc(p.user.username)} · flying since ${new Date(p.user.created).toLocaleDateString()}</p>`;
+  let html = '';
+  for (const g of s.games) {
+    const st = p.games[g.id];
+    if (!g.profile || !g.profile.length) continue;
+    const blocks = (label, d) => `<h2>${esc(g.title)} · ${label}</h2><div class="stats">${g.profile.map((f) => `<div class="stat"><b>${(d && d[f.key]) || 0}</b><span>${esc(f.label)}</span></div>`).join('')}</div>`;
+    html += st ? blocks('all time', st.all) + blocks('this week', st.week) : `<h2>${esc(g.title)}</h2><p class="note">No ranked rounds yet.</p>`;
+  }
+  document.getElementById('games').innerHTML = html;
+  document.getElementById('rounds').innerHTML = p.rounds.length ? '<div class="scroll"><table><tr><th></th><th>Game</th><th>Room</th><th>Kills</th><th>Deaths</th><th>Result</th></tr>' +
+    p.rounds.map((r) => `<tr><td>${new Date(r.ended).toLocaleDateString()}</td><td>${esc(r.game)}</td><td>${esc(r.room)}</td><td>${r.kills}</td><td>${r.deaths}</td><td>${r.won ? 'WON' : ''}${r.ranked ? '' : ' practice'}</td></tr>`).join('') + '</table></div>' : '<span class="note">No rounds yet.</span>';
+})();
+</script>
+</body></html>

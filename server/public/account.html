@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account — Retro Port Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2307090b'/%3E%3Cpath d='M16 6 L24 24 L8 24 Z' fill='none' stroke='%239ff7ff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head><body>
+<main class="page">
+<h1>Your account</h1><p class="lead" id="who"></p>
+<div class="panel form"><h2 style="margin-top:0">Callsign</h2><form id="cf"><label>Shown on your ship and the scoreboard (up to 8 letters or digits)</label><input type="text" id="c" maxlength="8"><p class="err" id="cerr"></p><button class="primary">Save callsign</button></form></div>
+<div class="panel form" style="margin-top:16px"><h2 style="margin-top:0">Password</h2><form id="pf"><label>Current password</label><input type="password" id="cur" autocomplete="current-password"><label>New password</label><input type="password" id="new" autocomplete="new-password" minlength="8"><p class="err" id="perr"></p><button class="primary">Change password</button></form><p class="note">Changing it signs you out everywhere else.</p></div>
+<p style="margin-top:20px"><button id="out">Sign out</button> <a class="btn" id="me" href="#">My pilot page</a></p>
+</main>
+<script src="/site.js"></script>
+<script>
+
+const $ = (id) => document.getElementById(id);
+ME.ready.then(() => {
+  if (!ME.user) { location.href = '/login?next=/account'; return; }
+  $('who').textContent = '@' + ME.user.username; $('c').value = ME.user.callsign; $('me').href = '/pilots/' + encodeURIComponent(ME.user.username);
+});
+const done = (el, ok, msg) => { el.className = ok ? 'okmsg' : 'err'; el.textContent = msg; };
+$('cf').onsubmit = async (e) => { e.preventDefault(); try { const r = await api('/api/account', { callsign: $('c').value }); $('c').value = r.user.callsign; done($('cerr'), 1, 'Saved.'); } catch (x) { done($('cerr'), 0, x.message); } };
+$('pf').onsubmit = async (e) => { e.preventDefault(); try { await api('/api/account', { current: $('cur').value, password: $('new').value }); $('cur').value = $('new').value = ''; done($('perr'), 1, 'Password changed.'); } catch (x) { done($('perr'), 0, x.message); } };
+$('out').onclick = async () => { await api('/api/logout', {}); location.href = '/'; };
+</script>
+</body></html>

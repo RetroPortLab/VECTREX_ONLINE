@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game — Retro Port Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2307090b'/%3E%3Cpath d='M16 6 L24 24 L8 24 Z' fill='none' stroke='%239ff7ff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head><body>
+<main class="page">
+<div id="head"></div>
+<div class="row" style="margin:16px 0 4px"><a class="btn primary" id="play" href="/play">Play</a><a class="btn" href="/watch">Watch</a></div>
+<div id="board"></div>
+<h2>How to play</h2><div class="panel"><div id="about"></div><dl class="controls" id="controls"></dl></div>
+<h2>On your console</h2><div class="panel" id="cart"></div>
+</main>
+<script src="/site.js"></script>
+<script>
+
+(async () => {
+  const id = location.pathname.split('/')[2];
+  const s = await api('/api/site');
+  const g = s.games.find((x) => x.id === id);
+  if (!g) { document.getElementById('head').innerHTML = '<h1>No such game</h1>'; return; }
+  document.title = g.title + ' — Retro Port Lab';
+  document.getElementById('head').innerHTML = `<h1>${esc(g.title)}</h1><p class="lead">${esc(g.tagline)}</p>`;
+  document.getElementById('play').href = '/play?game=' + g.id;
+  document.getElementById('about').innerHTML = g.about.map((t) => `<p style="margin-top:0">${esc(t)}</p>`).join('');
+  document.getElementById('controls').innerHTML = g.controls.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+  document.getElementById('cart').innerHTML = `<p style="margin-top:0">Cartridge tag <b>${esc(g.cart.tag)}</b>. Build it with <b>${esc(g.cart.build)}</b>; the source is in <b>${esc(g.cart.folder)}</b>.</p>`;
+  if (!g.leaderboard) return;
+  const box = document.getElementById('board');
+  box.innerHTML = '<h2>Leaderboard</h2><div class="tabs"><button data-p="all" class="on">All time</button><button data-p="week">This week</button></div><div class="panel" id="tbl"></div>' +
+    `<p class="note">${esc(g.leaderboard.note)} Ordered by ${g.leaderboard.order.join(', then ')}.</p>`;
+  const show = async (p) => {
+    box.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.p === p));
+    document.getElementById('tbl').innerHTML = await boardHtml(g, p, 50).catch(() => '<span class="note">scores are unavailable</span>');
+  };
+  box.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => show(b.dataset.p)));
+  show('all');
+})();
+</script>
+</body></html>

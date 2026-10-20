@@ -31,7 +31,9 @@ const cleanName = (n) => String(n || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ''
 class StrikeRoom {
   constructor(name, hooks) {
     this.name = name;
-    this.hooks = hooks;            // { send(ws, msgOrString), toMonitors(msg), log(msg, level) }
+    // hooks: { send(ws, msgOrString), toMonitors(msg), log(msg, level),
+    //          onRoundEnd(room, result), onLeave(room, pilot, ranked) }  (the last two: optional)
+    this.hooks = hooks;
     this.players = new Map();      // id -> pilot
     this.events = [];
     this.evtId = 0;
@@ -69,16 +71,19 @@ class StrikeRoom {
       since: Date.now(), inCount: 0, inHz: 0, frame: 0, rtt: null, rttHist: [], pings: new Map(), bstat: null, ip: '',
       // bots
       cd: 0, err: 0, errAt: 0, wander: 0,
+      // whose it is, and this round's tally for the leaderboards: pilots and bots shot down, deaths
+      userId: null, inRound: false, roundKills: 0, roundBotKills: 0, roundDeaths: 0,
     };
   }
 
   // ---- people ----------------------------------------------------------------------------
-  join(ws, name, ip) {
+  // user: the signed-in account ({id, callsign}) or null for a guest
+  join(ws, name, ip, user = null) {
     let id = this.freeId();
     if (!id && this.bots.length) { this.removeBot(); id = this.freeId(); }
     if (!id) return null;
-    const p = this.newPilot(id, cleanName(name) || `P${id}`, false);
-    p.ws = ws; p.ip = ip;
+    const p = this.newPilot(id, (user ? cleanName(user.callsign) : cleanName(name)) || `P${id}`, false);
+    p.ws = ws; p.ip = ip; p.userId = user ? user.id : null;
     this.players.set(id, p);
     this.event(E.JOIN, 0, 0, id);
     this.rosterDirty = true;
@@ -88,6 +93,8 @@ class StrikeRoom {
 
   leave(p) {
     if (this.players.get(p.id) !== p) return;
+    // leaving mid-round: what they shot so far still counts, if the round was a real one
+    if (this.hooks.onLeave && p.inRound && !this.roundOverAt) this.hooks.onLeave(this, p, this.ranked());
     this.players.delete(p.id);
     this.event(E.LEAVE, p.x, p.y, p.id);
     this.rosterDirty = true;
@@ -149,13 +156,16 @@ class StrikeRoom {
     victim.respawnAt = now + C.RESPAWN_MS;
     const killer = this.players.get(killerId);
     const shielded = now < victim.shieldUntil - 300;          // no credit for shooting a fresh spawn
+    if (!this.roundOverAt) victim.roundDeaths++;
     if (killer && killer !== victim && !this.roundOverAt && !shielded) {
       killer.score++;
+      if (victim.bot) killer.roundBotKills++; else killer.roundKills++;
       if (killer.score >= C.ROUND_KILLS) {
         this.winId = killer.id;
         this.roundOverAt = now;
         this.event(E.WIN, 0, 0, killer.id);
         this.hooks.log(`${killer.name} wins the round`);
+        if (this.hooks.onRoundEnd) this.hooks.onRoundEnd(this, { winner: killer, ranked: this.ranked(), pilots: this.roundPilots() });
       }
     }
     this.event(E.KILL, victim.x, victim.y, killer ? killer.id : 0, victim.id);
@@ -183,6 +193,7 @@ class StrikeRoom {
     p.bullets = [];
     p.shieldUntil = now + C.SHIELD_FRAMES * C.TICK_MS;
     p.spawnedAt = now;
+    if (!p.bot) p.inRound = true;
     this.event(E.SPAWN, p.x, p.y, p.id);
   }
 
@@ -258,7 +269,11 @@ class StrikeRoom {
     // respawns and the end of a round
     for (const p of all) if (p.inGame && !p.alive && now >= p.respawnAt) this.spawn(p, now);
     if (this.roundOverAt && now - this.roundOverAt > C.ROUND_PAUSE_MS) {
-      for (const p of all) { p.score = 0; p.deaths = 0; }
+      for (const p of all) {
+        p.score = 0; p.deaths = 0;
+        p.roundKills = p.roundBotKills = p.roundDeaths = 0;
+        p.inRound = !p.bot && p.inGame && p.alive;
+      }
       this.roundOverAt = 0; this.winId = 0;
       this.event(E.ROUND);
       this.rosterDirty = true;
@@ -271,6 +286,10 @@ class StrikeRoom {
     }
     if (now - this.lastMon >= C.MON_MS) this.sendMonitors(now, bullets);
   }
+
+  // A round counts for the leaderboards when two or more consoles took part in it.
+  roundPilots() { return [...this.players.values()].filter((p) => p.bot || p.inRound); }
+  ranked() { return this.humans.filter((p) => p.inRound).length >= 2; }
 
   shipsNow(now) {
     const out = [];
@@ -332,6 +351,7 @@ class StrikeRoom {
   info() {
     return [...this.players.values()].sort((a, b) => b.score - a.score || a.deaths - b.deaths || a.id - b.id).map((p) => ({
       slot: p.id, name: p.name, bot: p.bot, cart: p.bot ? 'bot' : 'uvmc2', score: p.score, deaths: p.deaths,
+      account: !!p.userId,
       alive: p.alive, inGame: p.inGame, rtt: p.rtt, rttHist: p.rttHist, inHz: p.inHz, frame: p.frame,
       since: p.since, bstat: p.bstat, lastAge: p.bot ? 0 : (p.lastSt ? Date.now() - p.lastSt : null),
     }));

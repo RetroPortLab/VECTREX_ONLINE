@@ -1,129 +1,245 @@
-// vectrex-netlink relay: pairs two Vectrex bridges per room, relays their state to each other,
-// measures the link, and feeds a live dashboard. One process, one dependency (ws).
+// Retro Port Lab — Vectrex online: the site, accounts, leaderboards, and the relay for the games.
 //
-//   bridges   : {t:"hello", role:"bridge", room, name, cart}  -> {t:"welcome", slot, peers, room}
-//               {t:"state", f, x, y, b, fl, jx, jy}           -> relayed to the other bridge
-//               {t:"bstat", ...}  once a second: the bridge's USB side
-//               {t:"pong", id}    answers our {t:"ping", id}; we send back {t:"rtt", ms}
-//   dashboards: {t:"hello", role:"monitor", room}  then {t:"watch", room} to switch
-//               get {t:"state", room, slot, ...}, {t:"stats", rooms:[...]}, {t:"event", ...}
+// Pages:  /  /games/<id>  /pilots/<name>  /login  /account  /play  /watch?room=  /cart-test
+// API:    GET  /api/site  /api/me  /api/leaderboard?game=&period=all|week  /api/pilots/<name>
+//         POST /api/register  /api/login  /api/logout  /api/account  /api/bots?room=&n=|add=
+// Relay:  wss://<host>/ws. A bridge says {t:"hello", role:"bridge", room, name, game}; the game
+//         (games/) runs the room. A signed-in browser's cookie makes its console that account;
+//         anything else plays as a guest. Dashboards say {t:"hello", role:"monitor", room}.
 //
-// A bridge whose hello says game:"strike" joins a VEC STRIKE room instead (strike.js): up to 20
-// pilots, scores, bots. POST /api/bots?room=NAME&n=COUNT (or &add=1 / &add=-1) sets its bots.
+// DATABASE_URL (a Neon connection string) keeps accounts and scores; without it they live in memory.
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
-const { StrikeRoom } = require('./strike');
+const games = require('./games');
+const { createStore } = require('./store');
+const auth = require('./auth');
 
 const PORT = process.env.PORT || 10000;
 const MAX_ROOMS = 200;
 const PUBLIC = path.join(__dirname, 'public');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
+const PAGES = { '/': 'index.html', '/login': 'login.html', '/register': 'login.html', '/account': 'account.html',
+  '/play': 'play.html', '/watch': 'watch.html', '/cart-test': 'serialtest.html' };
 const started = Date.now();
+const store = createStore();
+let dbOk = false;
 
-// ---- HTTP: the dashboard and a health check ---------------------------------------------
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://x');
-  if (url.pathname === '/healthz') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, rooms: rooms.size, uptime_s: Math.round((Date.now() - started) / 1000) }));
-  }
-  if (url.pathname === '/api/bots' && req.method === 'POST') {
-    const name = cleanRoom(url.searchParams.get('room'));
-    let r = rooms.get(name);
-    if (!r) r = room(name);
-    if (r && r.type !== 'strike' && r.bridges.size === 0) makeStrike(r);
-    if (!r || r.type !== 'strike') { res.writeHead(409, { 'content-type': 'application/json' }); return res.end('{"error":"not a VEC STRIKE room"}'); }
-    const g = r.strike;
-    if (url.searchParams.has('n')) g.setBots(Number(url.searchParams.get('n')));
-    else if (Number(url.searchParams.get('add')) > 0) g.addBot(); else g.removeBot();
-    if (g.empty) emptyLater(r);
-    res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ room: name, bots: g.bots.length, pilots: g.players.size }));
-  }
-  const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-  const full = path.join(PUBLIC, path.normalize(file));
-  if (!full.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
-  fs.readFile(full, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('not found'); }
-    res.writeHead(200, { 'content-type': TYPES[path.extname(full)] || 'application/octet-stream', 'cache-control': 'no-cache' });
-    res.end(data);
-  });
-});
-
-// ---- rooms ----------------------------------------------------------------------------
-/** room name -> { name, bridges: Map<slot, client>, events: [] } */
+// ---- rooms -------------------------------------------------------------------------------
+/** name -> { name, game, room, events: [], reaper } */
 const rooms = new Map();
 const monitors = new Set();
 
 const cleanRoom = (r) => String(r || 'test').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32) || 'test';
-const cleanName = (n) => String(n || 'player').replace(/[^\w .-]/g, '').slice(0, 24) || 'player';
-const int = (v, lo, hi) => { v = Math.round(Number(v) || 0); return v < lo ? lo : v > hi ? hi : v; };
 
-function room(name) {
-  let r = rooms.get(name);
-  if (!r) {
-    if (rooms.size >= MAX_ROOMS) return null;
-    r = { name, type: 'netlink', bridges: new Map(), events: [], strike: null };
-    rooms.set(name, r);
+function send(ws, msg) {
+  if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+}
+
+function event(rec, msg, level = 'info') {
+  const e = { t: 'event', room: rec.name, ts: Date.now(), level, msg };
+  rec.events.push(e);
+  if (rec.events.length > 50) rec.events.shift();
+  for (const m of monitors) if (m.watch === rec.name) send(m.ws, e);
+}
+
+function openRoom(name, game) {
+  let rec = rooms.get(name);
+  if (rec && rec.game !== game) {
+    if (!rec.room.empty) return { error: `room '${name}' is playing ${rec.game.title}` };
+    rec.room.close();
+    rooms.delete(name);
+    rec = null;
   }
-  return r;
+  if (!rec) {
+    if (rooms.size >= MAX_ROOMS) return { error: 'the server is full' };
+    rec = { name, game, events: [], reaper: null };
+    rec.room = game.createRoom(name, {
+      send,
+      toMonitors: (msg) => { const t = typeof msg === 'string' ? msg : JSON.stringify(msg); for (const m of monitors) if (m.watch === name) send(m.ws, t); },
+      log: (msg, level) => event(rec, msg, level),
+      store,
+    });
+    rooms.set(name, rec);
+  }
+  clearTimeout(rec.reaper);
+  return rec;
 }
 
-function makeStrike(r) {
-  r.type = 'strike';
-  r.strike = new StrikeRoom(r.name, {
-    send,
-    toMonitors: (msg) => { const t = JSON.stringify(msg); for (const m of monitors) if (m.watch === r.name) send(m.ws, t); },
-    log: (msg, level) => event(r, msg, level),
-  });
-}
-
-// A room nobody plays in goes after 10 minutes (bots and all).
-function emptyLater(r) {
-  clearTimeout(r.reaper);
-  r.reaper = setTimeout(() => {
-    const idle = r.type === 'strike' ? r.strike.empty : !r.bridges.size;
-    if (!idle) return;
-    if (r.strike) r.strike.close();
-    rooms.delete(r.name);
+// a room nobody plays in goes after 10 minutes (bots and all)
+function emptyLater(rec) {
+  clearTimeout(rec.reaper);
+  rec.reaper = setTimeout(() => {
+    if (rooms.get(rec.name) !== rec || !rec.room.empty) return;
+    rec.room.close();
+    rooms.delete(rec.name);
   }, 10 * 60 * 1000);
 }
 
-function send(ws, msg) {
-  if (ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+function liveRooms() {
+  return [...rooms.values()].map((r) => {
+    const info = r.room.info();
+    const humans = info.players.filter((p) => !p.bot).length;
+    return { name: r.name, game: r.game.id, title: r.game.title, pilots: info.players.length, consoles: humans, bots: info.players.length - humans };
+  }).filter((r) => r.pilots > 0).sort((a, b) => b.consoles - a.consoles || b.pilots - a.pilots);
 }
 
-function event(r, msg, level = 'info') {
-  const e = { t: 'event', room: r.name, ts: Date.now(), level, msg };
-  r.events.push(e);
-  if (r.events.length > 50) r.events.shift();
-  for (const m of monitors) if (m.watch === r.name) send(m.ws, e);
+// ---- HTTP --------------------------------------------------------------------------------
+const json = (res, code, obj, headers = {}) => {
+  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers });
+  res.end(JSON.stringify(obj));
+};
+const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+const secureReq = (req) => req.headers['x-forwarded-proto'] === 'https';
+
+function readBody(req) {
+  return new Promise((ok) => {
+    let b = '';
+    req.on('data', (d) => { b += d; if (b.length > 4096) { b = ''; req.destroy(); } });
+    req.on('end', () => { try { ok(JSON.parse(b || '{}')); } catch { ok({}); } });
+  });
 }
 
-function peersChanged(r) {
-  const peers = r.bridges.size;
-  for (const [slot, c] of r.bridges) send(c.ws, { t: 'peers', peers, slot });
+function serveFile(res, file, code = 200) {
+  const full = path.join(PUBLIC, path.normalize(file));
+  if (!full.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  fs.readFile(full, (err, data) => {
+    if (err) {
+      if (code === 404) { res.writeHead(404); return res.end('not found'); }
+      return serveFile(res, 'index.html', 404);
+    }
+    res.writeHead(code, {
+      'content-type': TYPES[path.extname(full)] || 'application/octet-stream', 'cache-control': 'no-cache',
+      'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin',
+    });
+    res.end(data);
+  });
 }
 
-function playerInfo(c) {
-  return {
-    slot: c.slot, name: c.name, cart: c.cart, rtt: c.rtt, rttHist: c.rttHist,
-    inHz: c.inHz, relayedHz: c.relayedHz, frame: c.last ? c.last.f : null,
-    missed: c.missed, total: c.total, since: c.since, bstat: c.bstat, ip: c.ip,
-    lastAge: c.lastAt ? Date.now() - c.lastAt : null,
-  };
+const userPub = (u) => u && { username: u.username, callsign: u.callsign, created: u.created };
+
+async function api(req, res, url) {
+  const p = url.pathname;
+  const m = req.method;
+  if (p === '/api/site' && m === 'GET') {
+    const live = liveRooms();
+    let counts = { users: 0, rounds: 0 };
+    try { counts = await store.counts(); } catch { /* db asleep */ }
+    return json(res, 200, {
+      brand: 'Retro Port Lab', persistent: store.persistent && dbOk, counts, rooms: live,
+      games: games.list.map((g) => ({ ...games.meta(g), live: live.filter((r) => r.game === g.id).reduce((n, r) => n + r.consoles, 0),
+        rooms: live.filter((r) => r.game === g.id).length })),
+    });
+  }
+  if (p === '/api/me' && m === 'GET') {
+    const u = await auth.userFromRequest(store, req);
+    return json(res, 200, { user: userPub(u), persistent: store.persistent && dbOk });
+  }
+  if (p === '/api/leaderboard' && m === 'GET') {
+    const g = games.byId.get(url.searchParams.get('game'));
+    if (!g || !g.leaderboard) return json(res, 404, { error: 'no leaderboard for that game' });
+    const period = url.searchParams.get('period') === 'week' ? 'week' : 'all';
+    const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 50));
+    try {
+      return json(res, 200, { game: g.id, period, rows: await store.leaderboard(g.id, period, g.leaderboard.order, limit) });
+    } catch (e) { return json(res, 503, { error: 'the scores database is not answering' }); }
+  }
+  if (p.startsWith('/api/pilots/') && m === 'GET') {
+    try {
+      const pilot = await store.pilot(decodeURIComponent(p.slice(12)));
+      if (!pilot) return json(res, 404, { error: 'no such pilot' });
+      return json(res, 200, pilot);
+    } catch { return json(res, 503, { error: 'the scores database is not answering' }); }
+  }
+  if (p === '/api/register' && m === 'POST') {
+    if (auth.slowDown(ipOf(req), 5)) return json(res, 429, { error: 'too many tries: wait a minute' });
+    const b = await readBody(req);
+    if (!auth.validUsername(b.username)) return json(res, 400, { error: 'pick a username of 3 to 16 letters, digits, - or _' });
+    if (!auth.validPassword(b.password)) return json(res, 400, { error: 'pick a password of at least 8 characters' });
+    const base = auth.cleanCallsign(b.callsign || b.username) || 'PILOT';
+    let cs = base;
+    for (let i = 2; (await store.callsignOwner(cs)) && i < 1000; i++) cs = base.slice(0, 8 - String(i).length) + i;
+    const u = await store.createUser(b.username, cs, await auth.hashPassword(b.password));
+    if (!u) return json(res, 409, { error: 'that username is taken' });
+    const token = await auth.startSession(store, u.id);
+    return json(res, 200, { user: userPub(u) }, { 'set-cookie': auth.sessionCookie(token, secureReq(req)) });
+  }
+  if (p === '/api/login' && m === 'POST') {
+    if (auth.slowDown(ipOf(req), 10)) return json(res, 429, { error: 'too many tries: wait a minute' });
+    const b = await readBody(req);
+    const u = auth.validUsername(b.username) ? await store.userByName(b.username) : null;
+    if (!u || !(await auth.verifyPassword(String(b.password || ''), u.pw_hash))) return json(res, 401, { error: 'wrong username or password' });
+    const token = await auth.startSession(store, u.id);
+    return json(res, 200, { user: userPub(u) }, { 'set-cookie': auth.sessionCookie(token, secureReq(req)) });
+  }
+  if (p === '/api/logout' && m === 'POST') {
+    const token = auth.parseCookies(req.headers.cookie)[auth.COOKIE];
+    if (token) await store.deleteSession(auth.tokenHash(token)).catch(() => {});
+    return json(res, 200, { ok: true }, { 'set-cookie': auth.sessionCookie('', secureReq(req), 0) });
+  }
+  if (p === '/api/account' && m === 'POST') {
+    const u = await auth.userFromRequest(store, req);
+    if (!u) return json(res, 401, { error: 'log in first' });
+    const b = await readBody(req);
+    if (b.callsign !== undefined) {
+      const cs = auth.cleanCallsign(b.callsign);
+      if (!cs) return json(res, 400, { error: 'a callsign is 1 to 8 letters or digits' });
+      const owner = await store.callsignOwner(cs);
+      if (owner && owner !== u.id) return json(res, 409, { error: `${cs} is someone else's callsign` });
+      await store.updateUser(u.id, { callsign: cs });
+    }
+    if (b.password !== undefined) {
+      if (auth.slowDown(ipOf(req), 10)) return json(res, 429, { error: 'too many tries: wait a minute' });
+      const full = await store.userByName(u.username);
+      if (!(await auth.verifyPassword(String(b.current || ''), full.pw_hash))) return json(res, 401, { error: 'your current password is not right' });
+      if (!auth.validPassword(b.password)) return json(res, 400, { error: 'pick a password of at least 8 characters' });
+      await store.updateUser(u.id, { pwHash: await auth.hashPassword(b.password) });
+      await store.deleteSessionsOf(u.id, auth.tokenHash(auth.parseCookies(req.headers.cookie)[auth.COOKIE]));   // log out everywhere else
+    }
+    return json(res, 200, { user: userPub(await store.userById(u.id)) });
+  }
+  if (p === '/api/bots' && m === 'POST') {
+    const name = cleanRoom(url.searchParams.get('room'));
+    const rec = openRoom(name, games.byId.get('vecstrike'));
+    if (rec.error || !rec.room.bots) return json(res, 409, { error: rec.error || 'not a VEC STRIKE room' });
+    const n = url.searchParams.has('n') ? Number(url.searchParams.get('n')) : null;
+    const out = rec.room.bots(n, Number(url.searchParams.get('add')));
+    if (rec.room.empty) emptyLater(rec);
+    return json(res, 200, { room: name, ...out });
+  }
+  return json(res, 404, { error: 'no such API' });
 }
 
-// ---- WebSocket -------------------------------------------------------------------------
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://x');
+  const p = url.pathname;
+  if (p === '/healthz') {
+    return json(res, 200, { ok: true, db: store.kind, dbOk, rooms: rooms.size, uptime_s: Math.round((Date.now() - started) / 1000) });
+  }
+  if (p.startsWith('/api/')) {
+    return api(req, res, url).catch((e) => { console.error(e); json(res, 500, { error: 'something went wrong' }); });
+  }
+  if (p === '/' && url.searchParams.has('room')) {         // old dashboard links
+    res.writeHead(302, { location: `/watch?room=${encodeURIComponent(url.searchParams.get('room'))}` });
+    return res.end();
+  }
+  if (PAGES[p]) return serveFile(res, PAGES[p]);
+  if (/^\/games\/[a-z0-9]+\/?$/.test(p)) return serveFile(res, 'game.html');
+  if (/^\/pilots\/[^/]+\/?$/.test(p)) return serveFile(res, 'pilot.html');
+  return serveFile(res, p.slice(1));
+});
+
+// ---- WebSocket ---------------------------------------------------------------------------
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
 
 wss.on('connection', (ws, req) => {
-  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-  const c = { ws, ip, role: null };
+  const ip = ipOf(req);
+  const c = { ws, ip, role: null, user: auth.userFromRequest(store, req) };   // a promise until the hello
   let budget = 200, lastRefill = Date.now();          // ~120 msg/s sustained per client
+  let queue = Promise.resolve();
 
   ws.on('message', (raw) => {
     const now = Date.now();
@@ -133,145 +249,113 @@ wss.on('connection', (ws, req) => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m.t !== 'string') return;
-
-    if (!c.role) return hello(c, m);
-    if (c.role === 'bridge') return fromBridge(c, m, now);
-    if (c.role === 'monitor' && m.t === 'watch') {
-      c.watch = cleanRoom(m.room);
-      const r = rooms.get(c.watch);
-      send(ws, { t: 'watching', room: c.watch, events: r ? r.events : [] });
-      if (r && r.strike) send(ws, { t: 'sroster', room: r.name, players: r.strike.rosterList() });
-    }
+    if (!c.role && !c.helloing) { c.helloing = true; queue = queue.then(() => hello(c, m)).catch((e) => console.error(e)); return; }
+    if (!c.role) { queue = queue.then(() => fromClient(c, m, now)); return; }
+    fromClient(c, m, now);
   });
 
   ws.on('close', () => {
-    if (c.role === 'monitor') monitors.delete(c);
-    if (c.role === 'bridge' && c.room) {
-      const r = c.room;
-      if (c.pilot) {
-        r.strike.leave(c.pilot);
-        if (r.strike.empty) emptyLater(r);
-        return;
+    queue.then(() => {
+      if (c.role === 'monitor') monitors.delete(c);
+      if (c.role === 'bridge' && c.rec && c.player) {
+        c.rec.room.leave(c.player);
+        if (c.rec.room.empty) emptyLater(c.rec);
       }
-      if (r.bridges.get(c.slot) === c) r.bridges.delete(c.slot);
-      event(r, `P${c.slot} ${c.name} left`, 'warn');
-      peersChanged(r);
-      if (!r.bridges.size) emptyLater(r);
-    }
+    });
   });
 });
 
-function hello(c, m) {
-  if (m.t !== 'hello') return;
+async function hello(c, m) {
+  if (m.t !== 'hello') { c.helloing = false; return; }
   if (m.role === 'monitor') {
     c.role = 'monitor';
     c.watch = cleanRoom(m.room);
     monitors.add(c);
-    const r = rooms.get(c.watch);
-    send(c.ws, { t: 'watching', room: c.watch, events: r ? r.events : [] });
+    sendWatching(c);
     return;
   }
-  if (m.role !== 'bridge') return;
-  const r = room(cleanRoom(m.room));
-  if (!r) { send(c.ws, { t: 'error', msg: 'server full' }); return c.ws.close(); }
-  const game = m.game === 'strike' ? 'strike' : 'netlink';
-  if (game === 'strike' && r.type !== 'strike') {
-    if (r.bridges.size) { send(c.ws, { t: 'error', msg: `room '${r.name}' is running the link test` }); return c.ws.close(); }
-    makeStrike(r);
+  if (m.role !== 'bridge') { c.helloing = false; return; }
+  const game = games.byBridgeName.get(m.game || 'netlink');
+  if (!game) { send(c.ws, { t: 'error', msg: `this server doesn't know the game "${m.game}"` }); return c.ws.close(); }
+  const user = await c.user;
+  let name = m.name;
+  if (!user) {                                     // a guest may not wear someone's callsign
+    const cs = auth.cleanCallsign(name);
+    if (cs && (await store.callsignOwner(cs).catch(() => null))) name = ('G' + cs).slice(0, 8);
   }
-  if (game === 'netlink' && r.type === 'strike') {
-    send(c.ws, { t: 'error', msg: `room '${r.name}' is running VEC STRIKE` }); return c.ws.close();
-  }
-  if (game === 'strike') {
-    const p = r.strike.join(c.ws, m.name, c.ip);
-    if (!p) { send(c.ws, { t: 'error', msg: `room '${r.name}' is full (20 pilots)` }); return c.ws.close(); }
-    clearTimeout(r.reaper);
-    Object.assign(c, { role: 'bridge', room: r, pilot: p, slot: p.id, name: p.name });
-    send(c.ws, { t: 'welcome', game: 'strike', id: p.id, slot: p.id, peers: r.strike.players.size, room: r.name });
+  const rec = openRoom(cleanRoom(m.room), game);
+  if (rec.error) { send(c.ws, { t: 'error', msg: rec.error }); return c.ws.close(); }
+  const p = rec.room.join(c.ws, { name, ip: c.ip, user, cart: m.cart });
+  if (p.error) { send(c.ws, { t: 'error', msg: p.error }); if (rec.room.empty) emptyLater(rec); return c.ws.close(); }
+  Object.assign(c, { role: 'bridge', rec, player: p });
+  if (user) event(rec, `${p.name} is ${user.username}`);
+}
+
+function sendWatching(c) {
+  const rec = rooms.get(c.watch);
+  send(c.ws, { t: 'watching', room: c.watch, events: rec ? rec.events : [] });
+  if (rec) for (const msg of rec.room.monitorInit()) send(c.ws, msg);
+}
+
+function fromClient(c, m, now) {
+  if (c.role === 'monitor') {
+    if (m.t === 'watch') { c.watch = cleanRoom(m.room); sendWatching(c); }
     return;
   }
-  const slot = !r.bridges.has(1) ? 1 : !r.bridges.has(2) ? 2 : 0;
-  if (!slot) { send(c.ws, { t: 'error', msg: `room '${r.name}' already has two consoles` }); return c.ws.close(); }
-  Object.assign(c, {
-    role: 'bridge', room: r, slot, name: cleanName(m.name), cart: m.cart === 'sim' ? 'sim' : 'uvmc2',
-    since: Date.now(), last: null, lastAt: 0, total: 0, missed: 0, inCount: 0, inHz: 0,
-    relayed: 0, relayedHz: 0, rtt: null, rttHist: [], pings: new Map(), bstat: null,
-  });
-  r.bridges.set(slot, c);
-  send(c.ws, { t: 'welcome', slot, peers: r.bridges.size, room: r.name });
-  event(r, `P${slot} ${c.name} joined (${c.cart})`);
-  peersChanged(r);
-}
-
-function fromBridge(c, m, now) {
-  const p = c.pilot;
-  if (p && (m.t === 'st' || m.t === 'hit')) return c.room.strike.fromBridge(p, m, now);
-  if (p && (m.t === 'pong' || m.t === 'bstat')) return linkStats(p, c.room, m, now);
-  if (m.t === 'pong' || m.t === 'bstat') return linkStats(c, c.room, m, now);
-  if (m.t === 'state') {
-    const s = {
-      f: int(m.f, 0, 0xffffffff), x: int(m.x, -127, 127), y: int(m.y, -127, 127),
-      b: int(m.b, 0, 255), fl: int(m.fl, 0, 255), jx: int(m.jx, -128, 127), jy: int(m.jy, -128, 127),
-    };
-    if (c.last && s.f > c.last.f + 1 && s.f - c.last.f < 500) c.missed += s.f - c.last.f - 1;
-    c.last = s; c.lastAt = now; c.total++; c.inCount++;
-    const out = JSON.stringify({ t: 'state', room: c.room.name, slot: c.slot, ...s });
-    for (const [slot, other] of c.room.bridges) {
-      if (slot !== c.slot) { send(other.ws, out); c.relayed++; }
-    }
-    for (const mon of monitors) if (mon.watch === c.room.name) send(mon.ws, out);
-  }
-}
-
-// RTT and the bridge's USB figures: on the connection (link test) or the pilot (VEC STRIKE)
-function linkStats(t, r, m, now) {
+  const p = c.player;
+  if (!p) return;
   if (m.t === 'pong') {
-    const sent = t.pings.get(m.id);
+    const sent = p.pings.get(m.id);
     if (sent) {
-      t.pings.delete(m.id);
-      t.rtt = now - sent;
-      t.rttHist.push(t.rtt);
-      if (t.rttHist.length > 60) t.rttHist.shift();
-      send(t.ws, { t: 'rtt', ms: t.rtt });
+      p.pings.delete(m.id);
+      p.rtt = now - sent;
+      p.rttHist.push(p.rtt);
+      if (p.rttHist.length > 60) p.rttHist.shift();
+      send(p.ws, { t: 'rtt', ms: p.rtt });
     }
-  } else {
-    const prev = t.bstat;
-    t.bstat = {
-      cart: String(m.cart || '').slice(0, 160), fw: String(m.fw || '').slice(0, 40),
-      usb_ms: Number(m.usb_ms) || 0, poll_hz: int(m.poll_hz, 0, 10000),
-      game_hz: int(m.game_hz, 0, 1000), sent_hz: int(m.sent_hz, 0, 1000),
-    };
-    const who = t.slot || t.id;
-    if (prev && prev.cart !== t.bstat.cart) event(r, `P${who} cart: ${t.bstat.cart}`, t.bstat.cart === 'ok' ? 'info' : 'warn');
+    return;
   }
+  if (m.t === 'bstat') {
+    const int = (v, lo, hi) => { v = Math.round(Number(v) || 0); return v < lo ? lo : v > hi ? hi : v; };
+    const prev = p.bstat;
+    p.bstat = {
+      cart: String(m.cart || '').slice(0, 160), fw: String(m.fw || '').slice(0, 40), usb_ms: Number(m.usb_ms) || 0,
+      poll_hz: int(m.poll_hz, 0, 10000), game_hz: int(m.game_hz, 0, 1000), sent_hz: int(m.sent_hz, 0, 1000),
+    };
+    if (prev && prev.cart !== p.bstat.cart) event(c.rec, `${p.name} cart: ${p.bstat.cart}`, p.bstat.cart === 'ok' ? 'info' : 'warn');
+    return;
+  }
+  c.rec.room.message(p, m, now);
 }
 
-// ---- once a second: pings, rates, dashboard stats --------------------------------------
+// ---- once a second: pings, rates, dashboard stats --------------------------------------------
 let pingId = 0;
 setInterval(() => {
   const now = Date.now();
-  const ping = (t) => {
-    const id = ++pingId;
-    t.pings.set(id, now);
-    for (const [k, ts] of t.pings) if (now - ts > 10000) t.pings.delete(k);
-    send(t.ws, { t: 'ping', id });
-  };
-  for (const r of rooms.values()) {
-    if (r.strike) for (const p of r.strike.humans) { ping(p); p.inHz = p.inCount; p.inCount = 0; }
-    for (const c of r.bridges.values()) {
+  for (const rec of rooms.values()) {
+    for (const p of rec.room.humans) {
       const id = ++pingId;
-      c.pings.set(id, now);
-      for (const [k, t] of c.pings) if (now - t > 10000) c.pings.delete(k);
-      send(c.ws, { t: 'ping', id });
-      c.inHz = c.inCount; c.inCount = 0;
-      c.relayedHz = c.relayed; c.relayed = 0;
+      p.pings.set(id, now);
+      for (const [k, t] of p.pings) if (now - t > 10000) p.pings.delete(k);
+      send(p.ws, { t: 'ping', id });
     }
+    rec.room.secondTick();
   }
-  const summary = [...rooms.values()].map((r) => r.type === 'strike'
-    ? { name: r.name, type: 'strike', players: r.strike.info(), win: r.strike.winId, rk: 15 }
-    : { name: r.name, type: 'netlink', players: [...r.bridges.values()].sort((a, b) => a.slot - b.slot).map(playerInfo) });
+  const summary = [...rooms.values()].map((rec) => ({ name: rec.name, game: rec.game.id, title: rec.game.title, ...rec.room.info() }));
   const msg = JSON.stringify({ t: 'stats', ts: now, uptime: now - started, rooms: summary });
   for (const m of monitors) send(m.ws, msg);
 }, 1000);
 
-server.listen(PORT, () => console.log(`vectrex-netlink relay on :${PORT}`));
+// ---- start -----------------------------------------------------------------------------------
+async function startDb() {
+  try {
+    await store.init();
+    dbOk = true;
+    console.log(store.persistent ? 'scores: Postgres' : 'scores: in memory (set DATABASE_URL to keep them)');
+  } catch (e) {
+    console.error(`database: ${e.message}; trying again in 15 s`);
+    setTimeout(startDb, 15000);
+  }
+}
+startDb();
+server.listen(PORT, () => console.log(`Retro Port Lab — Vectrex online on :${PORT}`));

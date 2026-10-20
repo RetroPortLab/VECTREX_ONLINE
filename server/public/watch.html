@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watch — Retro Port Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2307090b'/%3E%3Cpath d='M16 6 L24 24 L8 24 Z' fill='none' stroke='%239ff7ff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+<style>
+  :root {
+    --bg: #07090b;
+    --panel: #0d1115;
+    --line: #1c242c;
+    --text: #c9d4dc;
+    --dim: #6b7a86;
+    --p1: #9ff7ff;
+    --p2: #ffcf6e;
+    --ok: #7dffb0;
+    --warn: #ffb347;
+    --bad: #ff6b6b;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 var(--mono); }
+  body { min-height: 100vh; background:
+          radial-gradient(1200px 600px at 20% -10%, #10202a55, transparent 60%),
+          radial-gradient(900px 500px at 110% 20%, #2a1d0a33, transparent 60%), var(--bg); }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 18px 24px;
+           border-bottom: 1px solid var(--line); }
+  .logo { font-family: 'Major Mono Display', var(--mono); font-size: 22px; letter-spacing: .04em; color: #eaf6ff;
+          text-shadow: 0 0 6px #9ff7ff88, 0 0 18px #9ff7ff33; white-space: nowrap; }
+  .logo span { color: var(--p2); text-shadow: 0 0 6px #ffcf6e88, 0 0 18px #ffcf6e33; }
+  .roombar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .roombar label { color: var(--dim); }
+  input { background: #0a0e12; color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+          padding: 6px 10px; font: inherit; width: 140px; }
+  input:focus { outline: 1px solid #9ff7ff66; }
+  .chip { border: 1px solid var(--line); background: #0b1014; color: var(--text); border-radius: 999px; padding: 3px 10px;
+          font: inherit; font-size: 12px; cursor: pointer; }
+  .chip.on { border-color: #9ff7ff88; color: var(--p1); }
+  .chip small { color: var(--dim); }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--dim); white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 8px currentColor; color: var(--bad); }
+  .dot.ok { background: var(--ok); color: var(--ok); }
+
+  main { display: grid; grid-template-columns: minmax(300px, 520px) 1fr; gap: 20px; padding: 20px 24px 32px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; } .conn { margin-left: 0; } }
+
+  .panel { background: linear-gradient(180deg, #0e1318, #0b0f13); border: 1px solid var(--line); border-radius: 10px; }
+  .panel h2 { margin: 0; padding: 10px 14px; font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase;
+              color: var(--dim); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+  .panel h2 b { color: var(--text); font-weight: 500; letter-spacing: .04em; text-transform: none; }
+
+  .screen-wrap { padding: 14px; }
+  .screen { position: relative; aspect-ratio: 1 / 1; width: 100%; border-radius: 8px; overflow: hidden;
+            background: radial-gradient(ellipse at center, #0c1216 0%, #050708 75%); box-shadow: inset 0 0 60px #000, 0 0 0 1px #1a2229; }
+  .screen canvas { width: 100%; height: 100%; display: block; }
+  .legend { display: flex; gap: 16px; padding: 10px 14px 14px; color: var(--dim); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 1.5px solid; vertical-align: -1px; }
+  .legend .l1 i { border-color: var(--p1); transform: rotate(0deg); clip-path: polygon(50% 0, 100% 100%, 0 100%); background: var(--p1); }
+  .legend .l2 i { border-color: var(--p2); transform: rotate(45deg) scale(.8); }
+
+  .right { display: grid; gap: 20px; align-content: start; min-width: 0; }
+  .players { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 640px) { .players { grid-template-columns: 1fr; } }
+
+  .card .head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .badge { font-weight: 600; border-radius: 4px; padding: 1px 7px; font-size: 12px; }
+  .card.s1 .badge { color: #001a1d; background: var(--p1); box-shadow: 0 0 12px #9ff7ff55; }
+  .card.s2 .badge { color: #221600; background: var(--p2); box-shadow: 0 0 12px #ffcf6e55; }
+  .card .name { font-weight: 500; color: #eef4f8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .tag { margin-left: auto; font-size: 11px; color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+  .card.empty .body { color: var(--dim); padding: 22px 14px; }
+  .card.empty .badge { background: #1a2229; color: var(--dim); box-shadow: none; }
+  .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); }
+  .kv div { background: #0c1014; padding: 8px 12px; min-width: 0; }
+  .kv dt { color: var(--dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .kv dd { margin: 2px 0 0; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kv dd small { color: var(--dim); font-size: 11px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .io { display: flex; align-items: center; gap: 16px; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .stick { width: 38px; height: 38px; border: 1px solid #2a343d; border-radius: 6px; position: relative; flex: none; }
+  .stick::before, .stick::after { content: ''; position: absolute; background: #1c252d; }
+  .stick::before { left: 50%; top: 4px; bottom: 4px; width: 1px; } .stick::after { top: 50%; left: 4px; right: 4px; height: 1px; }
+  .stick b { position: absolute; width: 8px; height: 8px; border-radius: 50%; left: 15px; top: 15px; transition: transform 60ms linear; z-index: 1; }
+  .s1 .stick b { background: var(--p1); box-shadow: 0 0 8px var(--p1); } .s2 .stick b { background: var(--p2); box-shadow: 0 0 8px var(--p2); }
+  .lamps { display: flex; gap: 6px; }
+  .lamps span { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #2a343d; display: grid; place-items: center; font-size: 10px; color: var(--dim); }
+  .s1 .lamps span.on { background: var(--p1); color: #001a1d; box-shadow: 0 0 10px var(--p1); border-color: transparent; }
+  .s2 .lamps span.on { background: var(--p2); color: #221600; box-shadow: 0 0 10px var(--p2); border-color: transparent; }
+  .cartline { margin-left: auto; color: var(--dim); font-size: 11px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+  .chart { padding: 10px 14px 14px; }
+
+  /* VEC STRIKE */
+  .strike { grid-column: 1 / -1; }
+  .strike .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .strike .title { font-family: 'Major Mono Display', var(--mono); font-size: 18px; color: #eef6ff; text-shadow: 0 0 10px #9ff7ff55; }
+  .strike .round { color: var(--dim); }
+  .strike .win { color: var(--p2); font-weight: 600; text-shadow: 0 0 10px #ffcf6e88; }
+  .strike .bots { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--dim); }
+  .strike .bots button { font: inherit; background: #0b1014; color: var(--text); border: 1px solid var(--line); border-radius: 6px; width: 30px; height: 28px; cursor: pointer; }
+  .strike .bots button:hover { border-color: #9ff7ff66; }
+  .board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .board th { text-align: left; font-weight: 500; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .board td { padding: 6px 10px; border-bottom: 1px solid #141b21; white-space: nowrap; }
+  .board td.num, .board th.num { text-align: right; }
+  .board tr.dead td { opacity: .5; }
+  .board .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 8px; vertical-align: 0; box-shadow: 0 0 8px currentColor; }
+  .board .tagb { font-size: 10px; color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+  .board .lead td:first-child { color: var(--p2); }
+  .board-wrap { max-height: 520px; overflow: auto; }
+  @media (max-width: 640px) {
+    .board th:nth-child(6), .board td:nth-child(6) { display: none; }
+    .board td, .board th { padding: 6px 7px; }
+    .strike .bots { margin-left: 0; width: 100%; }
+    .panel h2 b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  }
+  .chart canvas { width: 100%; height: 150px; display: block; }
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+  .summary > div { background: #0c1014; padding: 10px 14px; }
+  .summary dt { color: var(--dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .summary dd { margin: 2px 0 0; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .summary dd small { color: var(--dim); font-size: 11px; }
+  main > section.panel { align-self: start; }
+  @media (max-width: 640px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+
+  .lower { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 1100px) { .lower { grid-template-columns: 1fr; } }
+  .log { height: 220px; overflow-y: auto; padding: 8px 14px; font-size: 12px; }
+  .log p { margin: 0 0 4px; } .log time { color: var(--dim); margin-right: 8px; }
+  .howto { padding: 12px 14px 14px; color: var(--dim); }
+  .howto ol { margin: 0; padding-left: 18px; } .howto li { margin-bottom: 8px; }
+  pre { margin: 6px 0 0; background: #070a0d; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--text);
+        white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">watch</div>
+  <div class="roombar">
+    <label for="room">room</label>
+    <input id="room" spellcheck="false" autocomplete="off">
+    <div id="rooms" class="roombar"></div>
+  </div>
+  <div class="conn"><span id="dot" class="dot"></span><span id="connText">connecting</span></div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Screen <b id="screenNote">-127 … 127</b></h2>
+    <div class="screen-wrap"><div class="screen"><canvas id="scr"></canvas></div></div>
+    <div class="legend" id="legend"><span class="l1"><i></i>P1 ship</span><span class="l2"><i></i>P2 ship</span><span>ring = button 1 · trail = last 1.5 s</span></div>
+  </section>
+
+  <div class="right">
+    <div class="players" id="players"></div>
+
+    <section class="panel">
+      <h2>Link <b id="linkNote"></b></h2>
+      <dl class="summary" style="margin:0">
+        <div><dt>Console → console</dt><dd id="e2e">–</dd></div>
+        <div><dt>In frames</dt><dd id="e2eFrames">–</dd></div>
+        <div><dt>Relayed / s</dt><dd id="relayed">–</dd></div>
+        <div><dt>Server up</dt><dd id="uptime">–</dd></div>
+      </dl>
+      <div class="chart"><canvas id="rtt"></canvas></div>
+    </section>
+
+    <div class="lower">
+      <section class="panel"><h2>Events</h2><div class="log" id="log"></div></section>
+      <section class="panel"><h2>Connect a console</h2>
+        <div class="howto"><ol>
+          <li id="howGame">Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.</li>
+          <li>On the PC the cart is plugged into:
+            <pre id="cmd"></pre></li>
+          <li id="howSim">No hardware yet? Add <b>--sim</b> for a pretend console.</li>
+        </ol></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="/site.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  let room = (params.get('room') || 'test').toLowerCase();
+  $('room').value = room;
+  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  const showCmd = () => { $('cmd').textContent = `python bridge.py --server ${wsUrl} --room ${room} --name YOURNAME`; };
+  showCmd();
+
+  // ---- live state per slot -------------------------------------------------------------
+  const live = { 1: null, 2: null };          // latest state + trail
+  let stats = null, ws = null, lastStatsAt = 0;
+  const TRAIL_MS = 1500;
+
+  // VEC STRIKE: the arena from {t:"ssnap"} (10 Hz), names from the roster, sparks from events
+  let mode = 'netlink';
+  const sv = { ships: [], bul: [], at: 0, names: {}, bots: {}, win: 0, rk: 15, fx: [] };
+  const hue = (id) => `hsl(${(id * 137.508) % 360} 95% 72%)`;
+  const HULLS = [[0, 8, -5, -5, 0, -2, 5, -5], [0, 9, -6, -4, 6, -4], [0, 9, -3, -1, -6, -6, 0, -3, 6, -6, 3, -1], [0, 8, -5, 0, 0, -6, 5, 0]];
+  const sinA = (a) => Math.sin(a * Math.PI / 128), cosA = (a) => Math.cos(a * Math.PI / 128);
+  const nameOf = (id) => sv.names[id] || ('P' + id);
+  function onSnap(m) {
+    if (m.room !== room) return;
+    sv.ships = m.ships; sv.bul = m.bul; sv.at = performance.now(); sv.win = m.win; sv.rk = m.rk;
+  }
+  function onRoster(players) {
+    for (const p of players) { sv.names[p[0]] = p[4]; sv.bots[p[0]] = !!(p[1] & 8); }
+  }
+  function onSev(m) {
+    if (m.room !== room) return;
+    const [id, type, x, y, a, b] = m.e;
+    const now = performance.now();
+    if (type === 1) {                                   // a kill: sparks, and a line in the log
+      for (let i = 0; i < 18; i++) {
+        const ang = Math.random() * Math.PI * 2, v = 20 + Math.random() * 70;
+        sv.fx.push({ k: 's', x, y, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, t0: now, life: 500 + Math.random() * 500, c: hue(b) });
+      }
+      sv.fx.push({ k: 'r', x, y, t0: now, life: 450, c: hue(b), big: 1 });
+      addEvent({ room, ts: Date.now(), msg: `${nameOf(a) || '?'} ✕ ${nameOf(b)}` });
+    } else if (type === 2 || type === 5) {
+      sv.fx.push({ k: 'r', x, y, t0: now, life: 350, c: hue(a), big: 0 });
+    } else if (type === 6) {
+      addEvent({ room, ts: Date.now(), level: 'warn', msg: `${nameOf(a)} wins the round` });
+    } else if (type === 7) {
+      addEvent({ room, ts: Date.now(), msg: 'new round' });
+    }
+  }
+  async function bots(delta) {
+    try { await fetch(`/api/bots?room=${encodeURIComponent(room)}&add=${delta}`, { method: 'POST' }); } catch { /* next stats tells */ }
+  }
+  window.vsBots = bots;
+
+  function onState(m) {
+    if (m.room !== room) return;
+    const now = performance.now();
+    const p = live[m.slot] || (live[m.slot] = { trail: [] });
+    Object.assign(p, m, { at: now });
+    p.trail.push({ x: m.x, y: m.y, t: now });
+    while (p.trail.length && now - p.trail[0].t > TRAIL_MS) p.trail.shift();
+    drawIO(m.slot, m);
+  }
+
+  // ---- socket --------------------------------------------------------------------------
+  function connect() {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => { setConn(true); ws.send(JSON.stringify({ t: 'hello', role: 'monitor', room })); };
+    ws.onclose = () => { setConn(false); setTimeout(connect, 1500); };
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.t === 'state') onState(m);
+      else if (m.t === 'ssnap') onSnap(m);
+      else if (m.t === 'sev') onSev(m);
+      else if (m.t === 'sroster') { if (m.room === room) onRoster(m.players); }
+      else if (m.t === 'stats') { stats = m; lastStatsAt = Date.now(); renderStats(); }
+      else if (m.t === 'event') addEvent(m);
+      else if (m.t === 'watching') { $('log').innerHTML = ''; (m.events || []).forEach(addEvent); }
+    };
+  }
+  function setConn(ok) { $('dot').classList.toggle('ok', ok); $('connText').textContent = ok ? 'live' : 'reconnecting'; }
+  function watch(r) {
+    r = r.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32) || 'test';
+    if (r === room) return;
+    room = r; $('room').value = r; live[1] = live[2] = null; showCmd();
+    sv.ships = []; sv.bul = []; sv.fx = []; sv.names = {}; sv.bots = {};
+    history.replaceState(null, '', '?room=' + encodeURIComponent(r));
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'watch', room: r }));
+    renderStats();
+  }
+  $('room').addEventListener('change', (e) => watch(e.target.value));
+  $('room').addEventListener('keydown', (e) => { if (e.key === 'Enter') watch(e.target.value); });
+
+  function addEvent(e) {
+    if (e.room && e.room !== room) return;
+    const p = document.createElement('p');
+    const t = new Date(e.ts || Date.now()).toLocaleTimeString();
+    p.innerHTML = `<time>${t}</time><span class="${e.level === 'warn' ? 'warn' : ''}"></span>`;
+    p.lastChild.textContent = e.msg;
+    const log = $('log');
+    log.appendChild(p);
+    while (log.children.length > 100) log.firstChild.remove();
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // ---- stats: rooms, cards, link summary -----------------------------------------------
+  const fmtDur = (ms) => { const s = Math.floor(ms / 1000); return s < 60 ? s + 's' : s < 3600 ? Math.floor(s / 60) + 'm' : Math.floor(s / 3600) + 'h ' + Math.floor(s % 3600 / 60) + 'm'; };
+  const cls = (v, good, okish) => v == null ? '' : v <= good ? 'ok' : v <= okish ? 'warn' : 'bad';
+
+  function renderStats() {
+    const rs = stats ? stats.rooms : [];
+    $('rooms').innerHTML = '';
+    for (const r of rs) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (r.name === room ? ' on' : '');
+      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : `${r.name} <small>${r.players.length}/2</small>`;
+      b.onclick = () => watch(r.name);
+      $('rooms').appendChild(b);
+    }
+    const cur = rs.find((r) => r.name === room);
+    const players = cur ? cur.players : [];
+    mode = cur && cur.type === 'strike' ? 'strike' : 'netlink';
+    $('howGame').innerHTML = mode === 'strike'
+      ? 'Build <b>VEC STRIKE</b> onto the cart (<b>netstrike</b> in WSL), start it from the multicart menu, plug in its USB.'
+      : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
+    $('howSim').innerHTML = mode === 'strike'
+      ? 'Or run <b>VectrexBridge</b> with this room. Alone? Add bots above: they fly by the same rules.'
+      : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
+    $('legend').style.display = mode === 'strike' ? 'none' : '';
+    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : '-127 … 127';
+    if (mode === 'strike') return renderStrike(cur);
+    const bySlot = { 1: players.find((p) => p.slot === 1), 2: players.find((p) => p.slot === 2) };
+    $('players').innerHTML = [1, 2].map((s) => card(s, bySlot[s])).join('');
+    for (const s of [1, 2]) if (live[s] && bySlot[s]) drawIO(s, live[s]);
+    if (!bySlot[1]) live[1] = null;
+    if (!bySlot[2]) live[2] = null;
+
+    document.querySelector('.summary div:nth-child(1) dt').textContent = 'Console → console';
+    document.querySelector('.summary div:nth-child(2) dt').textContent = 'In frames';
+    document.querySelector('.summary div:nth-child(3) dt').textContent = 'Relayed / s';
+    const a = bySlot[1], b = bySlot[2];
+    if (a && b && a.rtt != null && b.rtt != null) {
+      const usb = (a.bstat ? a.bstat.usb_ms : 0) + (b.bstat ? b.bstat.usb_ms : 0);
+      const ms = Math.round(a.rtt / 2 + b.rtt / 2 + usb);
+      $('e2e').innerHTML = `<span class="${cls(ms, 60, 120)}">${ms}</span> <small>ms est.</small>`;
+      $('e2eFrames').innerHTML = `${(ms / 20).toFixed(1)} <small>@ 50 Hz</small>`;
+      $('linkNote').textContent = 'one way: half of each RTT + USB';
+    } else {
+      $('e2e').textContent = '–'; $('e2eFrames').textContent = '–';
+      $('linkNote').textContent = players.length ? 'waiting for the second console' : 'no consoles in this room';
+    }
+    $('relayed').textContent = players.reduce((n, p) => n + (p.relayedHz || 0), 0) || '–';
+    $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
+    drawChart(bySlot);
+  }
+
+  function renderStrike(r) {
+    for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = p.bot; }
+    const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
+    const rows = r.players.map((p, i) => {
+      const link = p.bot ? '<span class="tagb">BOT</span>'
+        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 20 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+      const state = !p.inGame ? 'title screen' : p.alive ? 'flying' : 'respawning';
+      return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.score ? 'lead' : ''}">
+        <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
+        <td class="num">${p.score}</td><td class="num">${p.deaths}</td><td>${link}</td><td style="color:var(--dim)">${state}</td></tr>`;
+    }).join('');
+    const win = r.win ? `<span class="win">${esc(nameOf(r.win))} wins the round</span>` : `<span class="round">first to ${r.rk || 15} kills</span>`;
+    $('players').innerHTML = `<section class="panel strike">
+      <div class="bar"><span class="title">vec strike</span>${win}
+        <span class="bots">bots ${nb} <button onclick="vsBots(-1)" title="remove a bot">−</button><button onclick="vsBots(1)" title="add a bot">+</button></span></div>
+      <div class="board-wrap"><table class="board"><thead><tr><th>#</th><th>Pilot</th><th class="num">Kills</th><th class="num">Deaths</th><th>Link</th><th>Now</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start a console in this room, or add bots.</td></tr>'}</tbody></table></div></section>`;
+    $('e2e').innerHTML = `${humans.length} <small>consoles</small>`;
+    $('e2eFrames').innerHTML = `${nb} <small>bots</small>`;
+    $('relayed').textContent = humans.reduce((n, p) => n + (p.inHz || 0), 0) || '–';
+    $('linkNote').textContent = humans.length ? 'RTT of each console to the relay' : 'no consoles yet';
+    document.querySelector('.summary div:nth-child(1) dt').textContent = 'Pilots';
+    document.querySelector('.summary div:nth-child(2) dt').textContent = 'Bots';
+    document.querySelector('.summary div:nth-child(3) dt').textContent = 'Ship updates / s';
+    $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
+    drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
+  }
+
+  function card(slot, p) {
+    if (!p) return `<section class="panel card empty s${slot}"><div class="head"><span class="badge">P${slot}</span><span class="name">empty</span></div>
+      <div class="body">No console in this slot yet.</div></section>`;
+    const st = p.bstat || {};
+    const cartOk = st.cart === 'ok';
+    const stale = p.lastAge != null && p.lastAge > 1000;
+    return `<section class="panel card s${slot}">
+      <div class="head"><span class="badge">P${slot}</span><span class="name">${esc(p.name)}</span><span class="tag">${p.cart}</span></div>
+      <dl class="kv" style="margin:0">
+        <div><dt>RTT</dt><dd class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} <small>ms</small></dd></div>
+        <div><dt>Frames in</dt><dd class="${p.inHz >= 45 ? 'ok' : p.inHz > 0 ? 'warn' : 'bad'}">${p.inHz} <small>/s</small></dd></div>
+        <div><dt>Missed</dt><dd class="${p.missed ? 'warn' : ''}">${p.missed}</dd></div>
+        <div><dt>Position</dt><dd id="pos${slot}">–</dd></div>
+        <div><dt>Frame</dt><dd>${p.frame ?? '–'}</dd></div>
+        <div><dt>Since</dt><dd>${fmtDur(Date.now() - p.since)}</dd></div>
+        <div><dt>USB poll</dt><dd>${st.poll_hz ?? '–'} <small>/s</small></dd></div>
+        <div><dt>USB req</dt><dd>${st.usb_ms != null ? st.usb_ms.toFixed(1) : '–'} <small>ms</small></dd></div>
+        <div><dt>Game</dt><dd class="${stale ? 'bad' : ''}">${st.game_hz ?? '–'} <small>Hz</small></dd></div>
+      </dl>
+      <div class="io"><div class="stick" id="stick${slot}"><b></b></div>
+        <div class="lamps" id="lamps${slot}"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+        <div class="cartline ${cartOk ? '' : 'warn'}" title="${esc(st.cart || '')}">${esc(cartOk ? (st.fw || 'cart ok') : (st.cart || 'no status yet'))}</div></div>
+    </section>`;
+  }
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function drawIO(slot, s) {
+    const stick = document.querySelector(`#stick${slot} b`);
+    if (stick) stick.style.transform = `translate(${(s.jx / 127) * 13}px, ${(-s.jy / 127) * 13}px)`;
+    const lamps = $('lamps' + slot);
+    if (lamps) [...lamps.children].forEach((el, i) => el.classList.toggle('on', !!(s.b & (1 << i))));
+    const pos = $('pos' + slot);
+    if (pos) pos.textContent = `${s.x}, ${s.y}`;
+  }
+
+  // ---- the screen ----------------------------------------------------------------------
+  const scr = $('scr'), sctx = scr.getContext('2d');
+  const colors = { 1: '#9ff7ff', 2: '#ffcf6e' };
+  function fit(c) {
+    const r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+    if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)) { c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); }
+    return { w: c.width, h: c.height, d };
+  }
+  function shape(ctx, pts, close) { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); if (close) ctx.closePath(); ctx.stroke(); }
+
+  function frame() {
+    const { w, h, d } = fit(scr);
+    const sx = (x) => w / 2 + (x / 127) * (w / 2 - 14 * d);
+    const sy = (y) => h / 2 - (y / 127) * (h / 2 - 14 * d);
+    const k = (w / 254) * 0.95;
+    const now = performance.now();
+    sctx.clearRect(0, 0, w, h);
+
+    // faint graticule
+    sctx.strokeStyle = '#ffffff0a'; sctx.lineWidth = d;
+    for (let g = -100; g <= 100; g += 50) { shape(sctx, [[sx(g), sy(-127)], [sx(g), sy(127)]]); shape(sctx, [[sx(-127), sy(g)], [sx(127), sy(g)]]); }
+
+    sctx.lineCap = sctx.lineJoin = 'round';
+    if (mode === 'strike') { drawArena(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
+    for (const slot of [1, 2]) {
+      const p = live[slot];
+      if (!p) continue;
+      const age = now - p.at, fresh = age < 500, c = colors[slot];
+      // trail
+      for (let i = 1; i < p.trail.length; i++) {
+        const a = p.trail[i - 1], b = p.trail[i];
+        const t = 1 - (now - b.t) / TRAIL_MS;
+        sctx.strokeStyle = c + Math.round(Math.max(0, t) * 70).toString(16).padStart(2, '0');
+        sctx.lineWidth = 1.5 * d;
+        shape(sctx, [[sx(a.x), sy(a.y)], [sx(b.x), sy(b.y)]]);
+      }
+      // ship with glow
+      const x = p.x, y = p.y;
+      const pts = slot === 1 ? [[x, y + 10], [x - 8, y - 8], [x + 8, y - 8]] : [[x, y + 10], [x + 9, y], [x, y - 10], [x - 9, y]];
+      const P = pts.map(([px, py]) => [sx(px), sy(py)]);
+      sctx.shadowColor = c; sctx.shadowBlur = (fresh ? 14 : 4) * d;
+      sctx.strokeStyle = fresh ? c : c + '55'; sctx.lineWidth = 2 * d;
+      shape(sctx, P, true);
+      if ((p.fl & 1) && fresh) {
+        sctx.beginPath(); sctx.arc(sx(x), sy(y), 16 * k, 0, Math.PI * 2); sctx.stroke();
+      }
+      sctx.shadowBlur = 0;
+      sctx.fillStyle = fresh ? c : c + '66';
+      sctx.font = `${11 * d}px IBM Plex Mono, monospace`;
+      sctx.fillText('P' + slot + (fresh ? '' : ' (stale)'), sx(x) + 14 * d, sy(y) - 10 * d);
+    }
+    if (!live[1] && !live[2]) {
+      sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center';
+      sctx.fillText('waiting for consoles in room "' + room + '"', w / 2, h / 2); sctx.textAlign = 'start';
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function drawArena(sx, sy, k, d, now, w, h) {
+    const age = Math.min(0.4, (now - sv.at) / 1000) * 50;          // frames since the arena frame
+    const wrapv = (v) => (v > 118 ? v - 236 : v < -118 ? v + 236 : v);
+    // bullets
+    sctx.lineWidth = 1.6 * d;
+    for (const [bx, by, ba, o] of sv.bul) {
+      const x = wrapv(bx + sinA(ba) * 4 * age), y = wrapv(by + cosA(ba) * 4 * age);
+      sctx.strokeStyle = hue(o); sctx.shadowColor = hue(o); sctx.shadowBlur = 6 * d;
+      shape(sctx, [[sx(x), sy(y)], [sx(x - sinA(ba) * 3), sy(y - cosA(ba) * 3)]]);
+    }
+    // ships
+    sctx.font = `${10 * d}px IBM Plex Mono, monospace`;
+    for (const [id, x0, y0, a, fl, vx, vy] of sv.ships) {
+      if (!(fl & 1)) continue;
+      const x = wrapv(x0 + vx / 16 * age), y = wrapv(y0 + vy / 16 * age), c = hue(id);
+      const hull = HULLS[id & 3], pts = [];
+      for (let i = 0; i < hull.length; i += 2) {
+        const px = hull[i], py = hull[i + 1];
+        pts.push([sx(x + (px * cosA(a) + py * sinA(a))), sy(y + (-px * sinA(a) + py * cosA(a)))]);
+      }
+      const shield = fl & 4;
+      sctx.strokeStyle = c; sctx.shadowColor = c; sctx.shadowBlur = 12 * d; sctx.lineWidth = 2 * d;
+      sctx.globalAlpha = shield && Math.floor(now / 120) % 2 ? 0.45 : 1;
+      shape(sctx, pts, true);
+      if (fl & 2) {
+        const f = 8 + Math.random() * 3;
+        shape(sctx, [[sx(x + (-2 * cosA(a) - 4 * sinA(a))), sy(y + (2 * sinA(a) - 4 * cosA(a)))],
+          [sx(x - f * sinA(a)), sy(y - f * cosA(a))], [sx(x + (2 * cosA(a) - 4 * sinA(a))), sy(y + (-2 * sinA(a) - 4 * cosA(a)))]]);
+      }
+      if (shield) { sctx.lineWidth = d; sctx.beginPath(); sctx.arc(sx(x), sy(y), 12 * k, 0, Math.PI * 2); sctx.stroke(); }
+      sctx.globalAlpha = 1; sctx.shadowBlur = 0;
+      sctx.fillStyle = c;
+      sctx.fillText(nameOf(id) + (sv.bots[id] ? ' ·bot' : ''), sx(x) + 12 * d, sy(y) - 10 * d);
+    }
+    // sparks and rings
+    sv.fx = sv.fx.filter((f) => now - f.t0 < f.life);
+    for (const f of sv.fx) {
+      const t = (now - f.t0) / 1000, left = 1 - (now - f.t0) / f.life;
+      sctx.strokeStyle = f.c; sctx.shadowColor = f.c; sctx.shadowBlur = 8 * d; sctx.globalAlpha = Math.max(0, left);
+      if (f.k === 's') {
+        const x = f.x + f.vx * t * (1 - t / 2), y = f.y + f.vy * t * (1 - t / 2);
+        sctx.lineWidth = 1.5 * d; shape(sctx, [[sx(x), sy(y)], [sx(x - f.vx * 0.04), sy(y - f.vy * 0.04)]]);
+      } else {
+        sctx.lineWidth = 1.5 * d; sctx.beginPath(); sctx.arc(sx(f.x), sy(f.y), (3 + t * (f.big ? 60 : 35)) * k, 0, Math.PI * 2); sctx.stroke();
+      }
+    }
+    sctx.globalAlpha = 1; sctx.shadowBlur = 0;
+    if (sv.win) {
+      sctx.fillStyle = '#ffcf6e'; sctx.font = `600 ${18 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center';
+      sctx.shadowColor = '#ffcf6e'; sctx.shadowBlur = 16 * d;
+      sctx.fillText(`${nameOf(sv.win)} WINS`, w / 2, h / 2); sctx.shadowBlur = 0; sctx.textAlign = 'start';
+    }
+    if (!sv.ships.length) {
+      sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center';
+      sctx.fillText('the arena is empty', w / 2, h / 2); sctx.textAlign = 'start';
+    }
+  }
+
+  // ---- RTT chart -----------------------------------------------------------------------
+  function drawChart(bySlot) {
+    drawChartSeries([1, 2].map((s) => ({ c: colors[s], pts: bySlot[s] ? bySlot[s].rttHist : [] })));
+  }
+  function drawChartSeries(lines) {
+    const c = $('rtt'), ctx = c.getContext('2d');
+    const { w, h, d } = fit(c);
+    ctx.clearRect(0, 0, w, h);
+    const series = lines.map((l) => l.pts);
+    const max = Math.max(100, ...series.flat()) * 1.15;
+    const L = 34 * d, B = h - 16 * d, T = 6 * d, R = w - 6 * d;
+    ctx.font = `${10 * d}px IBM Plex Mono, monospace`; ctx.fillStyle = '#6b7a86'; ctx.strokeStyle = '#1c242c'; ctx.lineWidth = d;
+    const step = max > 400 ? 200 : max > 200 ? 100 : 50;
+    for (let v = 0; v <= max; v += step) {
+      const y = B - (v / max) * (B - T);
+      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke();
+      ctx.fillText(v, 4 * d, y + 3 * d);
+    }
+    ctx.fillText('RTT ms · last 60 s', L, h - 3 * d);
+    lines.forEach((l, i) => {
+      const pts = series[i];
+      if (pts.length < 2) return;
+      ctx.strokeStyle = l.c; ctx.lineWidth = 1.75 * d; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      pts.forEach((v, j) => { const x = R - (pts.length - 1 - j) * ((R - L) / 59); const y = B - (v / max) * (B - T); j ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.stroke();
+    });
+  }
+  addEventListener('resize', () => renderStats());
+
+  // stats stop arriving: say so
+  setInterval(() => { if (lastStatsAt && Date.now() - lastStatsAt > 4000) setConn(false); }, 1000);
+  renderStats();
+  connect();
+})();
+</script>
+</body>
+</html>

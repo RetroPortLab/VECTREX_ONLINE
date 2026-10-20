@@ -1,7 +1,7 @@
 {
-  "name": "vectrex-netlink-relay",
+  "name": "retro-port-lab-vectrex",
   "version": "1.0.0",
-  "description": "Relay and live dashboard for two Vectrex consoles linked over the internet",
+  "description": "Retro Port Lab: Vectrex consoles online. Relay, games, accounts and leaderboards.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,7 +10,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "postgres": "^3.4.5"
   },
   "license": "MIT"
 }
