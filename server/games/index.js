@@ -2,7 +2,7 @@
 // list it here (GAMES.md in the repo walks through the console, bridge and server sides).
 
 //const list = [require('./vecstrike'), require('./linktest')];
-const list = [require('./vecstrike');
+const list = require('./vecstrike');
 const byId = new Map(list.map((g) => [g.id, g]));
 const byBridgeName = new Map();
 for (const g of list) { byBridgeName.set(g.id, g); for (const n of g.bridgeNames || []) byBridgeName.set(n, g); }
