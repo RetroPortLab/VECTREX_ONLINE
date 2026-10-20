@@ -38,6 +38,7 @@ const monitors = new Set();
 // LOCK_ROOM=beta puts every console, dashboard and bot request in that one room, whatever it asks for
 const LOCK_ROOM = String(process.env.LOCK_ROOM || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
 // Who may add and remove bots. With neither variable set it is open to everyone (as when testing).
+//   NTFY_TOPIC=secret-name   phone alert (ntfy.sh) when a console joins an empty room; NTFY_IGNORE=handles skips yours
 //   BOT_ADMINS=name1,name2   site usernames that may, once signed in
 //   BOT_KEY=secret           or anyone who sends it (header x-bot-key, or ?key=): for the netbots command
 const BOT_ADMINS = String(process.env.BOT_ADMINS || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean);
@@ -295,6 +296,27 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+// Phone alert through ntfy.sh when a console joins an empty room (NTFY_TOPIC; optional NTFY_SERVER, NTFY_IGNORE=handles, SITE_URL)
+const NTFY_TOPIC = String(process.env.NTFY_TOPIC || '').trim();
+const NTFY_SERVER = String(process.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/+$/, '');
+const NTFY_IGNORE = String(process.env.NTFY_IGNORE || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean);
+const SITE_URL = String(process.env.SITE_URL || 'https://vectrex-netlink.onrender.com').replace(/\/+$/, '');
+const ntfyLast = new Map();                              // room -> last alert time
+const ascii = (t) => String(t).replace(/[^\x20-\x7e]/g, '?').slice(0, 80);
+function notifyJoin(rec, p, user, wasEmpty) {
+  if (!NTFY_TOPIC || !wasEmpty || rec.game.id === 'linktest') return;
+  if (NTFY_IGNORE.includes(String(p.name).toLowerCase()) || (user && NTFY_IGNORE.includes(user.username.toLowerCase()))) return;
+  const now = Date.now();
+  if (now - (ntfyLast.get(rec.name) || 0) < 5 * 60 * 1000) return;     // one alert per room per 5 minutes
+  ntfyLast.set(rec.name, now);
+  fetch(`${NTFY_SERVER}/${encodeURIComponent(NTFY_TOPIC)}`, {
+    method: 'POST',
+    headers: { Title: ascii(`${p.name} joined ${rec.game.title}`), Tags: 'video_game', Click: `${SITE_URL}/watch?room=${encodeURIComponent(rec.name)}` },
+    body: `${p.name}${user ? ` (${user.username})` : ''} is on the link in room "${rec.name}". Tap to watch.`,
+    signal: AbortSignal.timeout(8000),
+  }).catch((e) => console.error('ntfy:', e.message));
+}
+
 async function hello(c, m) {
   if (m.t !== 'hello') { c.helloing = false; return; }
   if (m.role === 'monitor') {
@@ -315,8 +337,10 @@ async function hello(c, m) {
   }
   const rec = openRoom(cleanRoom(m.room), game);
   if (rec.error) { send(c.ws, { t: 'error', msg: rec.error }); return c.ws.close(); }
+  const wasEmpty = !rec.room.info().players.some((q) => !q.bot);
   const p = rec.room.join(c.ws, { name, ip: c.ip, user, cart: m.cart });
   if (p.error) { send(c.ws, { t: 'error', msg: p.error }); if (rec.room.empty) emptyLater(rec); return c.ws.close(); }
+  notifyJoin(rec, p, user, wasEmpty);
   Object.assign(c, { role: 'bridge', rec, player: p, joinInfo: { name, user, cart: m.cart } });
   if (user) event(rec, `${p.name} is ${user.username}`);
 }
@@ -335,8 +359,10 @@ function rejoinGame(c) {
   if (c.player || !c.rec || !c.joinInfo) return;
   const rec = openRoom(c.rec.name, c.rec.game);
   if (rec.error) return send(c.ws, { t: 'error', msg: rec.error });
+  const wasEmpty = !rec.room.info().players.some((q) => !q.bot);
   const p = rec.room.join(c.ws, { name: c.joinInfo.name, ip: c.ip, user: c.joinInfo.user, cart: c.joinInfo.cart });
   if (p.error) { if (rec.room.empty) emptyLater(rec); return send(c.ws, { t: 'error', msg: p.error }); }
+  notifyJoin(rec, p, c.joinInfo.user, wasEmpty);
   Object.assign(c, { rec, player: p });
   event(rec, `${p.name} rejoined`, 'info');
 }
