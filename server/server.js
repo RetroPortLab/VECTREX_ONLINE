@@ -35,6 +35,18 @@ const monitors = new Set();
 
 // LOCK_ROOM=beta puts every console, dashboard and bot request in that one room, whatever it asks for
 const LOCK_ROOM = String(process.env.LOCK_ROOM || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
+// Who may add and remove bots. With neither variable set it is open to everyone (as when testing).
+//   BOT_ADMINS=name1,name2   site usernames that may, once signed in
+//   BOT_KEY=secret           or anyone who sends it (header x-bot-key, or ?key=): for the netbots command
+const BOT_ADMINS = String(process.env.BOT_ADMINS || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean);
+const BOT_KEY = String(process.env.BOT_KEY || '');
+const botsOpen = !BOT_ADMINS.length && !BOT_KEY;
+const sha = (x) => require('crypto').createHash('sha256').update(String(x)).digest();
+const isBotAdmin = (u) => botsOpen || !!(u && BOT_ADMINS.includes(u.username.toLowerCase()));
+function keyOk(req, url) {
+  const k = req.headers['x-bot-key'] || url.searchParams.get('key');
+  return !!(BOT_KEY && k && require('crypto').timingSafeEqual(sha(k), sha(BOT_KEY)));
+}
 const cleanRoom = (r) => LOCK_ROOM || String(r || 'test').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32) || 'test';
 
 function send(ws, msg) {
@@ -138,7 +150,7 @@ async function api(req, res, url) {
   }
   if (p === '/api/me' && m === 'GET') {
     const u = await auth.userFromRequest(store, req);
-    return json(res, 200, { user: userPub(u), persistent: store.persistent && dbOk });
+    return json(res, 200, { user: userPub(u), botAdmin: isBotAdmin(u), persistent: store.persistent && dbOk });
   }
   if (p === '/api/leaderboard' && m === 'GET') {
     const g = games.byId.get(url.searchParams.get('game'));
@@ -204,6 +216,10 @@ async function api(req, res, url) {
     return json(res, 200, { user: userPub(await store.userById(u.id)) });
   }
   if (p === '/api/bots' && m === 'POST') {
+    if (!botsOpen) {
+      if (url.searchParams.has('key') || req.headers['x-bot-key']) { if (auth.slowDown(ipOf(req) + 'k', 10)) return json(res, 429, { error: 'too many tries: wait a minute' }); }
+      if (!keyOk(req, url) && !isBotAdmin(await auth.userFromRequest(store, req))) return json(res, 403, { error: 'only bot admins can change the bots' });
+    }
     const name = cleanRoom(url.searchParams.get('room'));
     const rec = openRoom(name, games.byId.get('vecstrike'));
     if (rec.error || !rec.room.bots) return json(res, 409, { error: rec.error || 'not a VEC STRIKE room' });
