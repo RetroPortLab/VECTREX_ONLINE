@@ -259,33 +259,33 @@
       this.log(`cart: ${game === 'strike' ? 'VEC STRIKE' : 'link test'} mailbox at ${this.addr.toString(16)} (${how})`);
     }
     async scan() {
-      const t0 = performance.now(), hits = [];
+      // One read at a time, like the monitor's own tools do (the cart's answers can overrun if
+      // many are in flight), and each candidate is checked the moment it turns up.
+      const t0 = performance.now();
+      let n = 0;
       this.onScan && this.onScan(0);
-      const PIPE = 16;                                      // reads in flight at once
-      for (let a = SRAM0; a < SRAM1; a += 256 * PIPE) {
-        const reqs = [];
-        for (let k = 0; k < PIPE && a + k * 256 < SRAM1; k++) reqs.push(a + k * 256);
-        this.stale.length = 0;
-        const ps = reqs.map(() => this.answer(3000));
-        ps.forEach((p) => p.catch(() => {}));
-        await this.send(reqs.map((r) => `r ${r.toString(16)} 256\n`).join(''));
-        const hs = await Promise.all(ps);
-        hs.forEach((h, k) => {
-          if (h.startsWith('ERR') || h.length !== 512) return;
-          const b = unhex(h), v = dv(b);
-          for (let i = 0; i + 4 <= 256; i += 4) { const m = v.getUint32(i, true); if (m === MAGIC_STRIKE || m === MAGIC_NET) hits.push(reqs[k] + i); }
-        });
-        this.onScan && this.onScan((a - SRAM0) / (SRAM1 - SRAM0));
+      for (let base = SRAM0; base < SRAM1; base += 256) {
+        let chunk;
+        try { chunk = await this.read(base, 256); } catch (e) { if (this.gone) throw e; continue; }
+        const v = dv(chunk);
+        for (let i = 0; i + 4 <= 256; i += 4) {
+          const m = v.getUint32(i, true);
+          if (m !== MAGIC_STRIKE && m !== MAGIC_NET) continue;
+          n++;
+          const a = base + i;
+          const game = await this.check(a);
+          if (!game) continue;
+          const s1 = dv(await this.read(a + 8, 4)).getUint32(0, true);       // l_seq: offset 8 in both games
+          await sleep(100);
+          const s2 = dv(await this.read(a + 8, 4)).getUint32(0, true);
+          if (s1 !== s2) {
+            this.log(`cart: scanned ${((a - SRAM0) >> 10)} KB in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+            return [a, game];
+          }
+        }
+        if (((base - SRAM0) >> 8) % 32 === 0) { this.onScan && this.onScan((base - SRAM0) / (SRAM1 - SRAM0)); await hop(); }
       }
-      this.log(`cart: scanned ${(SRAM1 - SRAM0) >> 10} KB in ${((performance.now() - t0) / 1000).toFixed(1)} s, ${hits.length} candidate(s)`);
-      for (const a of hits) {
-        const game = await this.check(a);
-        if (!game) continue;
-        const s1 = dv(await this.read(a + 8, 4)).getUint32(0, true);       // l_seq: offset 8 in both games
-        await sleep(100);
-        const s2 = dv(await this.read(a + 8, 4)).getUint32(0, true);
-        if (s1 !== s2) return [a, game];
-      }
+      this.log(`cart: scanned ${(SRAM1 - SRAM0) >> 10} KB in ${((performance.now() - t0) / 1000).toFixed(1)} s, ${n} candidate(s)`);
       throw new CartError('no live mailbox in RAM: is VEC STRIKE (or the link test) the game running on the cart?');
     }
 
