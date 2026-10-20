@@ -172,7 +172,7 @@
       $('instList').textContent = 'Reading the games ...'; $('instBox').hidden = false; $('instGo').disabled = true;
       instFiles = [];
       for (const g of list) instFiles.push(await WebInstaller.fetchGame(g));
-      $('instList').innerHTML = 'This will write these files to the cartridge\'s SD card (files with the same name are replaced), then hand it to the multicart firmware (the screen goes black). When it's done, disconnect the USB cable and power-cycle the Vectrex:<br>' +
+      $('instList').innerHTML = 'This will write these files to the cartridge\'s SD card (files with the same name are replaced), then hand it to the multicart firmware (the screen goes black). When it is done, disconnect the USB cable and power-cycle the Vectrex:<br>' +
         instFiles.map((f) => `&bull; ${esc(f.title)} <span class="note">(${esc(f.name)}, ${(f.data.length / 1024).toFixed(0)} KB)</span>`).join('<br>');
       $('instGo').disabled = false;
     } catch (e) { $('instBox').hidden = true; $('instErr').textContent = e.message; }
