@@ -20,7 +20,7 @@ const game = {
     'Hits are judged by the ship that gets hit, on what its own screen shows: no lag excuses. Bots fill the room when there are few pilots, and fly by the same rules.',
   ],
   controls: [['Stick left / right', 'turn'], ['Stick up, or button 3', 'thrust'], ['Button 4', 'fire'],
-    ['Button 2', 'warp'], ['Button 1 (hold)', 'scoreboard']],
+    ['Button 2', 'warp'], ['Button 1 (hold)', 'scoreboard'], ['Buttons 1 + 2 (hold 1 s)', 'quit to the title screen']],
   leaderboard: {
     order: ['wins', 'kills'],
     columns: [{ key: 'wins', label: 'Wins' }, { key: 'kills', label: 'Kills' }, { key: 'deaths', label: 'Deaths' },

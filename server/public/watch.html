@@ -233,6 +233,46 @@
       addEvent({ room, ts: Date.now(), msg: 'new round' });
     }
   }
+  // LIGHT CYCLES: {t:"cyc"} every server tick (70 ms): every cycle's cell and heading, each wall's corners
+  // when it changes (full list for a dashboard that has just arrived), and the last events.
+  const cv = { cyc: new Map(), walls: new Map(), st: 0, cd: 0, win: 0, tick: 70, evlast: null, fx: [], round: 0, at: 0 };
+  const GRID_N = 72;
+  const cellU = (c) => c * 3 - 107;                         // a cell's centre in screen units (as on the console)
+  function cvReset() { cv.cyc = new Map(); cv.walls = new Map(); cv.fx = []; cv.evlast = null; cv.win = 0; cv.st = 0; }
+  function onCyc(m) {
+    if (m.room !== room) return;
+    const now = performance.now();
+    if (m.full) { cv.walls = new Map(); cv.evlast = null; }
+    cv.st = m.st; cv.cd = m.cd; cv.win = m.st === 3 ? m.win : 0; cv.tick = m.tick_ms || 70; cv.at = now;
+    for (const [id, , flat] of m.tr || []) cv.walls.set(id, flat);
+    const seen = new Set();
+    for (const [id, x, y, dir, fl] of m.cyc) {
+      seen.add(id);
+      const o = cv.cyc.get(id);
+      if (!o || o.x !== x || o.y !== y) cv.cyc.set(id, { x, y, dir, alive: !!(fl & 1), bot: !!(fl & 8), t0: now });
+      else { o.dir = dir; o.alive = !!(fl & 1); o.bot = !!(fl & 8); }
+    }
+    for (const id of [...cv.cyc.keys()]) if (!seen.has(id)) { cv.cyc.delete(id); cv.walls.delete(id); }
+    for (const e of m.ev || []) {                             // events carry a rolling id: act on each once
+      const [eid, kind, x, y, a, b] = e;
+      if (cv.evlast === null) continue;
+      if (eid === cv.evlast || ((eid - cv.evlast) & 255) >= 128) continue;
+      cv.evlast = eid;
+      if (kind === 1) {
+        for (let i = 0; i < 16; i++) {
+          const ang = Math.random() * Math.PI * 2, v = 20 + Math.random() * 60;
+          cv.fx.push({ k: 's', x: cellU(x), y: cellU(y), vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, t0: now, life: 500 + Math.random() * 500, c: hue(a) });
+        }
+        cv.fx.push({ k: 'r', x: cellU(x), y: cellU(y), t0: now, life: 450, c: hue(a) });
+        addEvent({ room, ts: Date.now(), msg: b === 0 ? `${nameOf(a)} crashed` : b === a ? `${nameOf(a)} hit their own wall` : `${nameOf(b)} derezzed ${nameOf(a)}` });
+      } else if (kind === 2) { cv.fx = []; addEvent({ room, ts: Date.now(), msg: `round ${a}` }); }
+      else if (kind === 4) addEvent({ room, ts: Date.now(), level: 'warn', msg: a ? `${nameOf(a)} wins the round` : 'nobody wins the round' });
+      else if (kind === 5) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} joined` });
+      else if (kind === 6) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} left` });
+    }
+    if (cv.evlast === null) for (const e of m.ev || []) cv.evlast = e[0];     // the first message: only learn where the count is
+    if (cv.evlast === null) cv.evlast = 0;
+  }
   async function bots(delta) {
     try { await fetch(`/api/bots?room=${encodeURIComponent(room)}&add=${delta}`, { method: 'POST' }); } catch { /* next stats tells */ }
   }
@@ -258,6 +298,7 @@
       if (m.t === 'state') onState(m);
       else if (m.t === 'ssnap') onSnap(m);
       else if (m.t === 'sev') onSev(m);
+      else if (m.t === 'cyc') onCyc(m);
       else if (m.t === 'sroster') { if (m.room === room) onRoster(m.players); }
       else if (m.t === 'stats') { stats = m; lastStatsAt = Date.now(); renderStats(); }
       else if (m.t === 'event') addEvent(m);
@@ -269,7 +310,7 @@
     r = r.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32) || 'test';
     if (r === room) return;
     room = r; $('room').value = r; live[1] = live[2] = null; showCmd();
-    sv.ships = []; sv.bul = []; sv.fx = []; sv.names = {}; sv.bots = {};
+    sv.ships = []; sv.bul = []; sv.fx = []; sv.names = {}; sv.bots = {}; cvReset();
     history.replaceState(null, '', '?room=' + encodeURIComponent(r));
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'watch', room: r }));
     renderStats();
@@ -299,22 +340,27 @@
     for (const r of rs) {
       const b = document.createElement('button');
       b.className = 'chip' + (r.name === room ? ' on' : '');
-      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : `${r.name} <small>${r.players.length}/2</small>`;
+      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : `${r.name} <small>${r.players.length}/2</small>`;
       b.onclick = () => watch(r.name);
       $('rooms').appendChild(b);
     }
     const cur = rs.find((r) => r.name === room);
     const players = cur ? cur.players : [];
-    mode = cur && cur.type === 'strike' ? 'strike' : 'netlink';
+    mode = cur && (cur.type === 'strike' || cur.type === 'cycles') ? cur.type : 'netlink';
     $('howGame').innerHTML = mode === 'strike'
       ? 'Build <b>VEC STRIKE</b> onto the cart (<b>netstrike</b> in WSL), start it from the multicart menu, plug in its USB.'
-      : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
+      : mode === 'cycles'
+        ? 'Build <b>LIGHT CYCLES</b> onto the cart (<b>netcycles</b> in WSL), start it from the multicart menu, plug in its USB.'
+        : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
     $('howSim').innerHTML = mode === 'strike'
       ? 'Or run <b>VectrexBridge</b> with this room. Alone? Add bots above: they fly by the same rules.'
-      : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
-    $('legend').style.display = mode === 'strike' ? 'none' : '';
-    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : '-127 … 127';
+      : mode === 'cycles'
+        ? 'Or run <b>VectrexBridge</b> with this room. Alone? The server adds bots to race.'
+        : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
+    $('legend').style.display = mode === 'netlink' ? '' : 'none';
+    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : '-127 … 127';
     if (mode === 'strike') return renderStrike(cur);
+    if (mode === 'cycles') return renderCycles(cur);
     const bySlot = { 1: players.find((p) => p.slot === 1), 2: players.find((p) => p.slot === 2) };
     $('players').innerHTML = [1, 2].map((s) => card(s, bySlot[s])).join('');
     for (const s of [1, 2]) if (live[s] && bySlot[s]) drawIO(s, live[s]);
@@ -364,6 +410,35 @@
     document.querySelector('.summary div:nth-child(1) dt').textContent = 'Pilots';
     document.querySelector('.summary div:nth-child(2) dt').textContent = 'Bots';
     document.querySelector('.summary div:nth-child(3) dt').textContent = 'Ship updates / s';
+    $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
+    drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
+  }
+
+  function renderCycles(r) {
+    for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = p.bot; }
+    const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
+    const stateName = ['waiting for riders', 'get ready', 'racing', 'round over'][r.state] || '';
+    const rows = r.players.map((p, i) => {
+      const link = p.bot ? '<span class="tagb">BOT</span>'
+        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+      const state = !p.inGame ? 'title screen' : p.alive ? 'riding' : 'derezzed';
+      return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.wins ? 'lead' : ''}">
+        <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
+        <td class="num">${p.wins}</td><td class="num">${p.crashes}</td><td>${link}</td><td style="color:var(--dim)">${state}</td></tr>`;
+    }).join('');
+    const win = r.state === 3 && r.win ? `<span class="win">${esc(nameOf(r.win))} wins the round</span>` : `<span class="round">${stateName}${r.round ? ' · round ' + r.round : ''}</span>`;
+    $('players').innerHTML = `<section class="panel strike">
+      <div class="bar"><span class="title">light cycles</span>${win}
+        <span class="bots">bots ${nb} ${botAdmin ? '<button onclick="vsBots(-1)" title="remove a bot">−</button><button onclick="vsBots(1)" title="add a bot">+</button>' : ''}</span></div>
+      <div class="board-wrap"><table class="board"><thead><tr><th>#</th><th>Rider</th><th class="num">Wins</th><th class="num">Crashes</th><th>Link</th><th>Now</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start a console in this room.</td></tr>'}</tbody></table></div></section>`;
+    $('e2e').innerHTML = `${humans.length} <small>consoles</small>`;
+    $('e2eFrames').innerHTML = `${nb} <small>bots</small>`;
+    $('relayed').textContent = humans.reduce((n, p) => n + (p.inHz || 0), 0) || '–';
+    $('linkNote').textContent = humans.length ? 'RTT of each console to the relay' : 'no consoles yet';
+    document.querySelector('.summary div:nth-child(1) dt').textContent = 'Riders';
+    document.querySelector('.summary div:nth-child(2) dt').textContent = 'Bots';
+    document.querySelector('.summary div:nth-child(3) dt').textContent = 'Console updates / s';
     $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
     drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
   }
@@ -429,6 +504,7 @@
 
     sctx.lineCap = sctx.lineJoin = 'round';
     if (mode === 'strike') { drawArena(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
+    if (mode === 'cycles') { drawCycles(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     for (const slot of [1, 2]) {
       const p = live[slot];
       if (!p) continue;
@@ -520,6 +596,69 @@
       sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center';
       sctx.fillText('the arena is empty', w / 2, h / 2); sctx.textAlign = 'start';
     }
+  }
+
+  function drawCycles(sx, sy, k, d, now, w, h) {
+    // the arena: 72 x 72 cells, a faint grid every 6
+    sctx.strokeStyle = '#ffffff10'; sctx.lineWidth = d; sctx.shadowBlur = 0;
+    for (let c = 0; c <= GRID_N; c += 6) {
+      const u = c * 3 - 108;
+      shape(sctx, [[sx(u), sy(-108)], [sx(u), sy(108)]]); shape(sctx, [[sx(-108), sy(u)], [sx(108), sy(u)]]);
+    }
+    sctx.strokeStyle = '#9ff7ff55'; sctx.lineWidth = 1.5 * d;
+    shape(sctx, [[sx(-108), sy(-108)], [sx(108), sy(-108)], [sx(108), sy(108)], [sx(-108), sy(108)]], true);
+    // the walls, then the heads
+    const per = Math.max(30, cv.tick);
+    const head = (o) => {
+      const f = o.alive ? Math.min(1, (now - o.t0) / per) : 0;
+      return [cellU(o.x) + [0, 1, 0, -1][o.dir] * 3 * f, cellU(o.y) + [1, 0, -1, 0][o.dir] * 3 * f];
+    };
+    sctx.lineCap = sctx.lineJoin = 'round';
+    for (const [id, flat] of cv.walls) {
+      const o = cv.cyc.get(id);
+      if (!o || flat.length < 2) continue;
+      const c = hue(id), alive = o.alive;
+      const pts = [];
+      for (let i = 0; i + 1 < flat.length; i += 2) pts.push([sx(cellU(flat[i])), sy(cellU(flat[i + 1]))]);
+      const [hx, hy] = head(o);
+      pts.push([sx(hx), sy(hy)]);
+      sctx.strokeStyle = c; sctx.shadowColor = c; sctx.shadowBlur = (alive ? 10 : 3) * d;
+      sctx.globalAlpha = alive ? 1 : 0.35; sctx.lineWidth = (alive ? 2.2 : 1.6) * d;
+      shape(sctx, pts);
+    }
+    sctx.globalAlpha = 1;
+    sctx.font = `${10 * d}px IBM Plex Mono, monospace`;
+    for (const [id, o] of cv.cyc) {
+      if (!o.alive) continue;
+      const [hx, hy] = head(o), c = hue(id), fx = [0, 1, 0, -1][o.dir], fy = [1, 0, -1, 0][o.dir];
+      const P = [[5, 0], [-4, 3], [-2, 0], [-4, -3]].map(([f, s]) => [sx(hx + f * fx + s * fy), sy(hy + f * fy - s * fx)]);
+      sctx.strokeStyle = c; sctx.shadowColor = c; sctx.shadowBlur = 14 * d; sctx.lineWidth = 2 * d;
+      shape(sctx, P, true);
+      sctx.shadowBlur = 0; sctx.fillStyle = c;
+      sctx.fillText(nameOf(id) + (o.bot ? ' ·bot' : ''), sx(hx) + 12 * d, sy(hy) - 10 * d);
+    }
+    // sparks and rings
+    cv.fx = cv.fx.filter((f) => now - f.t0 < f.life);
+    for (const f of cv.fx) {
+      const t = (now - f.t0) / 1000, left = 1 - (now - f.t0) / f.life;
+      sctx.strokeStyle = f.c; sctx.shadowColor = f.c; sctx.shadowBlur = 8 * d; sctx.globalAlpha = Math.max(0, left); sctx.lineWidth = 1.5 * d;
+      if (f.k === 's') {
+        const x = f.x + f.vx * t * (1 - t / 2), y = f.y + f.vy * t * (1 - t / 2);
+        shape(sctx, [[sx(x), sy(y)], [sx(x - f.vx * 0.04), sy(y - f.vy * 0.04)]]);
+      } else { sctx.beginPath(); sctx.arc(sx(f.x), sy(f.y), (3 + t * 60) * k, 0, Math.PI * 2); sctx.stroke(); }
+    }
+    sctx.globalAlpha = 1; sctx.shadowBlur = 0; sctx.textAlign = 'center';
+    if (cv.st === 1) {
+      sctx.fillStyle = '#e8fbff'; sctx.font = `600 ${40 * d}px IBM Plex Mono, monospace`;
+      sctx.fillText(String(Math.min(3, Math.max(1, Math.ceil(cv.cd * cv.tick / 1000)))), w / 2, h / 2 + 14 * d);
+    } else if (cv.st === 3 && cv.win) {
+      sctx.fillStyle = '#ffcf6e'; sctx.font = `600 ${18 * d}px IBM Plex Mono, monospace`; sctx.shadowColor = '#ffcf6e'; sctx.shadowBlur = 16 * d;
+      sctx.fillText(`${nameOf(cv.win)} WINS`, w / 2, h / 2); sctx.shadowBlur = 0;
+    } else if (cv.st === 0 && !cv.cyc.size) {
+      sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`;
+      sctx.fillText('waiting for riders in room "' + room + '"', w / 2, h / 2);
+    }
+    sctx.textAlign = 'start'; sctx.shadowBlur = 0;
   }
 
   // ---- RTT chart -----------------------------------------------------------------------

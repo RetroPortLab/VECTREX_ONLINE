@@ -221,8 +221,9 @@ async function api(req, res, url) {
       if (!keyOk(req, url) && !isBotAdmin(await auth.userFromRequest(store, req))) return json(res, 403, { error: 'only bot admins can change the bots' });
     }
     const name = cleanRoom(url.searchParams.get('room'));
-    const rec = openRoom(name, games.byId.get('vecstrike'));
-    if (rec.error || !rec.room.bots) return json(res, 409, { error: rec.error || 'not a VEC STRIKE room' });
+    const asked = games.byId.get(url.searchParams.get('game') || '') || (rooms.get(name) && rooms.get(name).game) || games.byId.get('vecstrike');
+    const rec = openRoom(name, asked);
+    if (rec.error || !rec.room.bots) return json(res, 409, { error: rec.error || 'that game has no bots' });
     const n = url.searchParams.has('n') ? Number(url.searchParams.get('n')) : null;
     const out = rec.room.bots(n, Number(url.searchParams.get('add')));
     if (rec.room.empty) emptyLater(rec);
