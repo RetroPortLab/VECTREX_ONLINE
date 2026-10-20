@@ -7,7 +7,8 @@
 </head><body>
 <main class="page">
 <div id="head"></div>
-<div class="row" style="margin:16px 0 4px"><a class="btn primary" id="play" href="/play">Play</a><a class="btn" href="/watch">Watch</a></div>
+<div class="row" style="margin:16px 0 4px"><a class="btn primary" id="play" href="/play">Play</a><a class="btn" href="/watch">Watch</a><a class="btn" id="dl" hidden download>Download</a></div>
+<p class="note" id="dlnote" hidden></p>
 <div id="board"></div>
 <h2>How to play</h2><div class="panel"><div id="about"></div><dl class="controls" id="controls"></dl></div>
 </main>
@@ -22,6 +23,12 @@
   document.title = g.title + ' — Retro Port Lab';
   document.getElementById('head').innerHTML = `<h1>${esc(g.title)}</h1><p class="lead">${esc(g.tagline)}</p>`;
   document.getElementById('play').href = '/play?game=' + g.id;
+  if (g.download) {
+    const a = document.getElementById('dl');
+    a.href = '/downloads/' + g.download.file; a.hidden = false; a.textContent = 'Download ' + g.title;
+    const n = document.getElementById('dlnote');
+    n.hidden = false; n.textContent = `A zip with ${g.download.name}: unzip it, copy the .um2 to your UVMC2's SD card, and start it from the multicart menu. It is built with the USB monitor, so the bridge can talk to it.`;
+  }
   document.getElementById('about').innerHTML = g.about.map((t) => `<p style="margin-top:0">${esc(t)}</p>`).join('');
   document.getElementById('controls').innerHTML = g.controls.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
   if (!g.leaderboard) return;

@@ -14,6 +14,7 @@ const game = {
   players: 'up to 8',
   bridgeNames: ['rocks'],
   cart: { tag: 'VAST', build: 'netrocks', folder: 'vectrex/asteroids' },
+  download: { file: 'NetLink-Asteroids.um2.zip', name: 'NetLink-Asteroids.um2' },
   dashboardType: 'rocks',
   about: [
     'Everyone flies in the same wrapped-round field. Shoot a rock and it splits; clear the field and the next wave comes faster. Saucers cross now and then and shoot back. Your shots never hurt your friends, but a rock or a saucer shot will.',

@@ -9,7 +9,7 @@ for (const g of list) { byBridgeName.set(g.id, g); for (const n of g.bridgeNames
 
 // what a site page needs to know about a game (no functions)
 const meta = (g) => ({
-  id: g.id, title: g.title, tagline: g.tagline, players: g.players, cart: g.cart, about: g.about,
+  id: g.id, title: g.title, tagline: g.tagline, players: g.players, cart: g.cart, about: g.about, download: g.download || null,
   controls: g.controls, leaderboard: g.leaderboard, profile: g.profile,
 });
 

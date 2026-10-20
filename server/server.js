@@ -20,7 +20,8 @@ const auth = require('./auth');
 const PORT = process.env.PORT || 10000;
 const MAX_ROOMS = 200;
 const PUBLIC = path.join(__dirname, 'public');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+const TYPES = {
+  '.zip': 'application/zip', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 const PAGES = { '/': 'index.html', '/login': 'login.html', '/register': 'login.html', '/account': 'account.html',
   '/play': 'play.html', '/watch': 'watch.html', '/cart-test': 'serialtest.html' };

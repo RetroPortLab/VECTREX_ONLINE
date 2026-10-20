@@ -14,6 +14,7 @@ const game = {
   players: 'up to 16',
   bridgeNames: ['cycles'],
   cart: { tag: 'VCYC', build: 'netcycles', folder: 'vectrex/lightcycles' },
+  download: { file: 'NetLink-lightcycles.um2.zip', name: 'NetLink-lightcycles.um2' },
   dashboardType: 'cycles',
   about: [
     'Every cycle moves at the same speed and leaves a wall behind it. Hit a wall, the edge or another cycle and you derez. The last cycle running wins the round, and the next one starts right away.',

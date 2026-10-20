@@ -14,6 +14,7 @@ const game = {
   players: 'up to 20',
   bridgeNames: ['strike'],               // what the bridge says in its hello
   cart: { tag: 'VSTK', build: 'netstrike', folder: 'vectrex/vecstrike' },
+  download: { file: 'Netlink-vecstrike.um2.zip', name: 'Netlink-vecstrike.um2' },
   dashboardType: 'strike',
   about: [
     'Asteroids-style dogfighting for up to 20 Vectrex consoles at once, in one wrap-around arena. Every console flies its own ship at a full 50 frames a second; everyone else arrives over the internet twenty times a second.',
