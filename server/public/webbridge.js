@@ -621,7 +621,9 @@
       ws.onerror = () => {};
     }
     closeNet() { const ws = this.ws; this.ws = null; if (ws) { try { ws.close(); } catch { /* gone */ } } }
-    wsend(o) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
+    leaveGame() { this.wsend({ t: 'leave' }); }
+    rejoinGame() { this.left = false; this.wsend({ t: 'rejoin' }); }
+    wsend(o) { if (this.left && o.t !== 'rejoin' && o.t !== 'pong' && o.t !== 'leave' && o.t !== 'bstat') return; if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
 
     onLocal(s, game) {                                       // a new game state from the cart
       this.latest = s;
@@ -664,6 +666,7 @@
       switch (m.t) {
         case 'ping': this.wsend({ t: 'pong', id: m.id }); break;
         case 'rtt': this.status.rtt = toI(m.ms); this.setLink(this.status.rtt); break;
+        case 'left': this.left = true; this.set({ net: 'left the game', peers: 0, pilots: 0 }); this.log('net: you left the game (the link stays up)'); break;
         case 'error': this.log(`net: server says: ${m.msg}`); this.set({ net: `error: ${m.msg}` }); break;
         case 'snap': {
           if (!strike) break;
@@ -699,6 +702,7 @@
           break;
         }
         case 'welcome':
+          if (this.left || this.status.net === 'left the game') { this.left = false; this.set({ net: 'connected' }); }
           if (strike) {
             this.myId = toI(m.id);
             this.status.slot = this.myId; this.status.peers = toI(m.peers); this.status.account = m.account || null;

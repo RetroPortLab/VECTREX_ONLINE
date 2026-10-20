@@ -277,7 +277,7 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     queue.then(() => {
       if (c.role === 'monitor') monitors.delete(c);
-      if (c.role === 'bridge' && c.rec && c.player) {
+      if (c.role === 'bridge' && c.rec && c.player) {   // (a console that left the game is already out)
         c.rec.room.leave(c.player);
         if (c.rec.room.empty) emptyLater(c.rec);
       }
@@ -307,8 +307,28 @@ async function hello(c, m) {
   if (rec.error) { send(c.ws, { t: 'error', msg: rec.error }); return c.ws.close(); }
   const p = rec.room.join(c.ws, { name, ip: c.ip, user, cart: m.cart });
   if (p.error) { send(c.ws, { t: 'error', msg: p.error }); if (rec.room.empty) emptyLater(rec); return c.ws.close(); }
-  Object.assign(c, { role: 'bridge', rec, player: p });
+  Object.assign(c, { role: 'bridge', rec, player: p, joinInfo: { name, user, cart: m.cart } });
   if (user) event(rec, `${p.name} is ${user.username}`);
+}
+
+// "Leave game": the console drops out of the room but keeps its link; "rejoin" puts it back
+function leaveGame(c) {
+  if (!c.player) return;
+  const rec = c.rec;
+  rec.room.leave(c.player);
+  event(rec, `${c.player.name} left the game (link kept)`, 'info');
+  c.player = null;
+  send(c.ws, { t: 'left' });
+  if (rec.room.empty) emptyLater(rec);
+}
+function rejoinGame(c) {
+  if (c.player || !c.rec || !c.joinInfo) return;
+  const rec = openRoom(c.rec.name, c.rec.game);
+  if (rec.error) return send(c.ws, { t: 'error', msg: rec.error });
+  const p = rec.room.join(c.ws, { name: c.joinInfo.name, ip: c.ip, user: c.joinInfo.user, cart: c.joinInfo.cart });
+  if (p.error) { if (rec.room.empty) emptyLater(rec); return send(c.ws, { t: 'error', msg: p.error }); }
+  Object.assign(c, { rec, player: p });
+  event(rec, `${p.name} rejoined`, 'info');
 }
 
 function sendWatching(c) {
@@ -322,6 +342,8 @@ function fromClient(c, m, now) {
     if (m.t === 'watch') { c.watch = cleanRoom(m.room); sendWatching(c); }
     return;
   }
+  if (m.t === 'leave') return leaveGame(c);
+  if (m.t === 'rejoin') return rejoinGame(c);
   const p = c.player;
   if (!p) return;
   if (m.t === 'pong') {

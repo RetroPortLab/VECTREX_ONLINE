@@ -57,7 +57,7 @@
 </div>
 
 <div id="live" hidden>
-  <div class="row" style="margin-bottom:14px"><b id="title">Connecting…</b><span id="tag"></span><span style="flex:1"></span><a class="btn" id="watch" href="/watch" target="_blank">Watch this room</a><button id="stop">Disconnect</button></div>
+  <div class="row" style="margin-bottom:14px"><b id="title">Connecting…</b><span id="tag"></span><span style="flex:1"></span><a class="btn" id="watch" href="/watch" target="_blank">Watch this room</a><button id="leave" title="Drop out of the game but keep the console linked">Leave game</button><button id="stop">Disconnect</button></div>
   <div id="scanBox" class="panel" hidden><div id="scanText">Looking for the game in the cartridge's RAM…</div><div class="bar"><i id="scanBar"></i></div>
     <p class="note" style="margin-bottom:0">This takes a few seconds the first time, only when the game hasn't announced where it is.</p></div>
   <div class="cols">
@@ -159,6 +159,8 @@
     } catch (e) { $('instMsg').textContent = 'Failed: ' + e.message; $('instGo').disabled = false; }
     $('instCancel').disabled = false; $('instBarBox').hidden = true;
   };
+  let left = false;
+  $('leave').onclick = () => { if (!bridge) return; if (left) bridge.rejoinGame(); else bridge.leaveGame(); };
   $('stop').onclick = async () => {
     if (bridge) await bridge.stop();
     bridge = null; try { wake?.release(); } catch { /* ok */ }
@@ -174,6 +176,7 @@
     $('title').textContent = s.game ? `${GAME[s.game]} · room ${s.room || '…'}` : 'Connecting…';
     $('tag').innerHTML = s.net === 'connected' ? '<span class="tag live">online</span>' : `<span class="tag">${esc(s.net)}</span>`;
     if (s.game) $('scanBox').hidden = true;
+    left = s.net === 'left the game'; $('leave').textContent = left ? 'Rejoin game' : 'Leave game'; $('leave').disabled = !(left || s.net === 'connected');
     $('cartKv').innerHTML = kv([
       ['Cartridge', ok ? 'ok' : s.cart, ok ? 'good' : s.cart === 'connecting' ? '' : 'bad'], ['Firmware', s.fw || '–'], ['Game', GAME[s.game] || '–'],
       ['USB request', s.usb_ms ? s.usb_ms.toFixed(1) + ' ms' : '–', s.usb_ms > 15 ? 'warn' : ''], ['Polls', s.poll_hz + ' /s'], ['Game frames', s.game_hz + ' /s', s.game_hz && s.game_hz < 40 ? 'warn' : '']]);
