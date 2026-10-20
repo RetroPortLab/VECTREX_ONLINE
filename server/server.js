@@ -303,18 +303,22 @@ const NTFY_IGNORE = String(process.env.NTFY_IGNORE || '').toLowerCase().split(',
 const SITE_URL = String(process.env.SITE_URL || 'https://vectrex-netlink.onrender.com').replace(/\/+$/, '');
 const ntfyLast = new Map();                              // room -> last alert time
 const ascii = (t) => String(t).replace(/[^\x20-\x7e]/g, '?').slice(0, 80);
+console.log(NTFY_TOPIC ? `ntfy: alerts ON (topic ${NTFY_TOPIC.slice(0, 4)}..., ${NTFY_SERVER})` : 'ntfy: alerts OFF (NTFY_TOPIC is not set)');
 function notifyJoin(rec, p, user, wasEmpty) {
-  if (!NTFY_TOPIC || !wasEmpty || rec.game.id === 'linktest') return;
-  if (NTFY_IGNORE.includes(String(p.name).toLowerCase()) || (user && NTFY_IGNORE.includes(user.username.toLowerCase()))) return;
+  if (!NTFY_TOPIC) return;
+  const skip = (why) => console.log(`ntfy: no alert for ${p.name} in ${rec.name}: ${why}`);
+  if (!wasEmpty) return skip('room already had a console');
+  if (rec.game.id === 'linktest') return skip('link test');
+  if (NTFY_IGNORE.includes(String(p.name).toLowerCase()) || (user && NTFY_IGNORE.includes(user.username.toLowerCase()))) return skip('on NTFY_IGNORE');
   const now = Date.now();
-  if (now - (ntfyLast.get(rec.name) || 0) < 5 * 60 * 1000) return;     // one alert per room per 5 minutes
+  if (now - (ntfyLast.get(rec.name) || 0) < 5 * 60 * 1000) return skip('5 minute cooldown');     // one alert per room per 5 minutes
   ntfyLast.set(rec.name, now);
   fetch(`${NTFY_SERVER}/${encodeURIComponent(NTFY_TOPIC)}`, {
     method: 'POST',
     headers: { Title: ascii(`${p.name} joined ${rec.game.title}`), Tags: 'video_game', Click: `${SITE_URL}/watch?room=${encodeURIComponent(rec.name)}` },
     body: `${p.name}${user ? ` (${user.username})` : ''} is on the link in room "${rec.name}". Tap to watch.`,
     signal: AbortSignal.timeout(8000),
-  }).catch((e) => console.error('ntfy:', e.message));
+  }).then((r) => console.log(`ntfy: sent for ${p.name} in ${rec.name} -> HTTP ${r.status}`)).catch((e) => console.error('ntfy: failed:', e.message));
 }
 
 async function hello(c, m) {
