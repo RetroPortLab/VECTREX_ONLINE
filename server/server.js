@@ -38,6 +38,7 @@ const monitors = new Set();
 // LOCK_ROOM=beta puts every console, dashboard and bot request in that one room, whatever it asks for
 const LOCK_ROOM = String(process.env.LOCK_ROOM || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
 // Who may add and remove bots. With neither variable set it is open to everyone (as when testing).
+//   NTFY_TOKEN=tk_...        ntfy access token (needed if ntfy.sh answers 429 to Render's shared IP)
 //   NTFY_TOPIC=secret-name   phone alert (ntfy.sh) when a console joins an empty room; NTFY_IGNORE=handles skips yours
 //   BOT_ADMINS=name1,name2   site usernames that may, once signed in
 //   BOT_KEY=secret           or anyone who sends it (header x-bot-key, or ?key=): for the netbots command
@@ -299,11 +300,12 @@ wss.on('connection', (ws, req) => {
 // Phone alert through ntfy.sh when a console joins an empty room (NTFY_TOPIC; optional NTFY_SERVER, NTFY_IGNORE=handles, SITE_URL)
 const NTFY_TOPIC = String(process.env.NTFY_TOPIC || '').trim();
 const NTFY_SERVER = String(process.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/+$/, '');
+const NTFY_TOKEN = String(process.env.NTFY_TOKEN || '').trim();      // optional ntfy access token: sends as your account, so Render's shared IP limits don't apply
 const NTFY_IGNORE = String(process.env.NTFY_IGNORE || '').toLowerCase().split(',').map((x) => x.trim()).filter(Boolean);
 const SITE_URL = String(process.env.SITE_URL || 'https://vectrex-netlink.onrender.com').replace(/\/+$/, '');
 const ntfyLast = new Map();                              // room -> last alert time
 const ascii = (t) => String(t).replace(/[^\x20-\x7e]/g, '?').slice(0, 80);
-console.log(NTFY_TOPIC ? `ntfy: alerts ON (topic ${NTFY_TOPIC.slice(0, 4)}..., ${NTFY_SERVER})` : 'ntfy: alerts OFF (NTFY_TOPIC is not set)');
+console.log(NTFY_TOPIC ? `ntfy: alerts ON (topic ${NTFY_TOPIC.slice(0, 4)}..., ${NTFY_SERVER}, ${NTFY_TOKEN ? 'with token' : 'no token'})` : 'ntfy: alerts OFF (NTFY_TOPIC is not set)');
 function notifyJoin(rec, p, user, wasEmpty) {
   if (!NTFY_TOPIC) return;
   const skip = (why) => console.log(`ntfy: no alert for ${p.name} in ${rec.name}: ${why}`);
@@ -315,10 +317,10 @@ function notifyJoin(rec, p, user, wasEmpty) {
   ntfyLast.set(rec.name, now);
   fetch(`${NTFY_SERVER}/${encodeURIComponent(NTFY_TOPIC)}`, {
     method: 'POST',
-    headers: { Title: ascii(`${p.name} joined ${rec.game.title}`), Tags: 'video_game', Click: `${SITE_URL}/watch?room=${encodeURIComponent(rec.name)}` },
+    headers: { ...(NTFY_TOKEN ? { Authorization: `Bearer ${NTFY_TOKEN}` } : {}), Title: ascii(`${p.name} joined ${rec.game.title}`), Tags: 'video_game', Click: `${SITE_URL}/watch?room=${encodeURIComponent(rec.name)}` },
     body: `${p.name}${user ? ` (${user.username})` : ''} is on the link in room "${rec.name}". Tap to watch.`,
     signal: AbortSignal.timeout(8000),
-  }).then((r) => console.log(`ntfy: sent for ${p.name} in ${rec.name} -> HTTP ${r.status}`)).catch((e) => console.error('ntfy: failed:', e.message));
+  }).then(async (r) => console.log(`ntfy: sent for ${p.name} in ${rec.name} -> HTTP ${r.status}${r.ok ? '' : ' ' + (await r.text().catch(() => '')).slice(0, 160)}`)).catch((e) => console.error('ntfy: failed:', e.message));
 }
 
 async function hello(c, m) {
