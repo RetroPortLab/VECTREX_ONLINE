@@ -164,7 +164,7 @@
   $('leave').onclick = () => { if (!bridge) return; if (left) bridge.rejoinGame(); else bridge.leaveGame(); };
   $('stop').onclick = async () => {
     if (bridge) await bridge.stop();
-    bridge = null; LS.set('rpl_active', ''); try { wake?.release(); } catch { /* ok */ }
+    bridge = null; LS.set('rpl_active', ''); showLive(); try { wake?.release(); } catch { /* ok */ }
     $('live').hidden = true; $('setup').hidden = false; $('remembered').textContent = 'Disconnected. Press Connect to go again.';
   };
 
@@ -205,6 +205,33 @@
     if ($('name') && !$('name').value) $('name').value = LS.get('rpl_name') || '';
     $('go').click();
   })();
+  // While the console is connected, the rest of the site opens inside this tab (in a frame under the nav),
+  // so the USB link and the relay connection stay up. "Play" brings the live view back.
+  const frame = document.createElement('iframe');
+  frame.id = 'siteFrame'; frame.hidden = true; frame.style.cssText = 'width:100%;border:0;min-height:60vh;background:transparent';
+  document.head.insertAdjacentHTML('beforeend', '<style>#siteFrame:not([hidden]){display:block}</style>');
+  document.body.insertBefore(frame, document.querySelector('footer.site-foot'));
+  let fit = null;
+  const fitFrame = () => { try { const d = frame.contentDocument.documentElement; frame.style.height = Math.max(d.scrollHeight, innerHeight - 120) + 'px'; } catch { /* not ready */ } };
+  frame.addEventListener('load', () => { fitFrame(); clearInterval(fit); fit = setInterval(fitFrame, 500);
+    try { document.title = frame.contentDocument.title || document.title; } catch { /* ok */ } });
+  function showFrame(url) {
+    const nav = document.querySelector('.site-nav');
+    document.querySelector('main.page').hidden = true; frame.hidden = false;
+    if (frame.getAttribute('src') !== url) frame.src = url;
+    nav.querySelectorAll('.links a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === new URL(url, location.href).pathname));
+    window.scrollTo(0, 0);
+  }
+  function showLive() {
+    frame.hidden = true; clearInterval(fit); document.querySelector('main.page').hidden = false; document.title = 'Play — Retro Port Lab';
+    document.querySelectorAll('.site-nav .links a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '/play'));
+  }
+  document.querySelector('.site-nav').addEventListener('click', (e) => {
+    const a = e.target.closest('a'); if (!a || !bridge || e.ctrlKey || e.metaKey || e.shiftKey || a.target === '_blank') return;
+    const href = a.getAttribute('href'); if (!href || !href.startsWith('/')) return;
+    e.preventDefault();
+    if (href === '/play') showLive(); else showFrame(href);
+  });
   window.addEventListener('beforeunload', () => { if (bridge) bridge.stop(); });
 })();
 </script>

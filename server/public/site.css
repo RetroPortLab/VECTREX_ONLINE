@@ -68,3 +68,7 @@ dl.controls dt { color: var(--p2); } dl.controls dd { margin: 0; }
 .banner { border: 1px solid #ffb34766; color: var(--warn); background: #ffb34710; border-radius: 8px; padding: 8px 14px; margin: 0 0 18px; font-size: 12px; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 @media (max-width: 700px) { .page { padding: 20px 16px 36px; } .site-nav { padding: 12px 16px; } .site-nav .who { margin-left: 0; } h1 { font-size: 24px; } }
+
+/* a page shown inside the Play page's frame (keeps the console connected while you browse) */
+.embedded .site-nav, .embedded .site-foot { display: none !important; }
+.embedded body { min-height: 0; }

@@ -12,6 +12,7 @@ const params = new URLSearchParams(location.search);
 const ME = { user: null, ready: null };
 
 (function chrome() {
+  if (window.top !== window) document.documentElement.classList.add('embedded');   // inside the Play page's frame: no second nav/footer
   const here = location.pathname;
   const on = (p) => (here === p || (p !== '/' && here.startsWith(p)) ? ' class="on"' : '');
   const nav = document.createElement('nav');
