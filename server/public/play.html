@@ -16,7 +16,7 @@
   .who input { max-width: 190px; }
   .bar { height: 6px; background: #121a20; border-radius: 3px; overflow: hidden; margin-top: 6px; } .bar i { display: block; height: 100%; background: var(--p1); width: 0; }
   /* the session bar: where you are, always visible while connected */
-  #sbar { position: sticky; top: 0; z-index: 20; background: #0a0f13f2; backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); box-shadow: 0 6px 18px #0008; }
+  #sbar { position: sticky; top: var(--strip-h, 0px); z-index: 20; background: #0a0f13f2; backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); box-shadow: 0 6px 18px #0008; }
   #sbar .in { max-width: 1040px; margin: 0 auto; padding: 10px 24px; display: grid; gap: 8px; }
   #sbar .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 8px; box-shadow: 0 0 0 0 transparent; }
@@ -266,12 +266,12 @@
     frame.hidden = true; clearInterval(fit); document.querySelector('main.page').hidden = false; document.title = 'Play — Retro Port Lab';
     document.querySelectorAll('.site-nav .links a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '/play'));
   }
-  document.querySelector('.site-nav').addEventListener('click', (e) => {
+  document.querySelectorAll('.site-nav, #live-strip').forEach((el) => el.addEventListener('click', (e) => {
     const a = e.target.closest('a'); if (!a || !bridge || e.ctrlKey || e.metaKey || e.shiftKey || a.target === '_blank') return;
     const href = a.getAttribute('href'); if (!href || !href.startsWith('/')) return;
     e.preventDefault();
-    if (href === '/play') showLive(); else showFrame(href);
-  });
+    if (href === '/play' || href.startsWith('/play?')) showLive(); else showFrame(href);
+  }));
   $('watch').addEventListener('click', (e) => { if (!bridge || e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); showFrame($('watch').getAttribute('href')); });
   window.addEventListener('beforeunload', () => { if (bridge) bridge.stop(); });
 })();

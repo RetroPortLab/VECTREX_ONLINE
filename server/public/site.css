@@ -74,3 +74,18 @@ dl.controls dt { color: var(--p2); } dl.controls dd { margin: 0; }
 /* a page shown inside the Play page's frame (keeps the console connected while you browse) */
 .embedded .site-nav, .embedded .site-foot { display: none !important; }
 .embedded body { min-height: 0; }
+
+/* the live strip: games, rooms and players, on every page */
+.live-strip { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px 16px; padding: 7px 24px; background: #0a0f13f2; backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); font-size: 12px; flex-wrap: wrap; }
+.live-strip .lv { color: var(--dim); letter-spacing: .14em; font-size: 11px; } .live-strip .lt { color: var(--dim); } .live-strip .lt b { color: var(--p2); }
+.live-strip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 7px; }
+.live-strip .dot.ok { background: var(--ok); box-shadow: 0 0 8px #7dffb099; }
+.live-strip .lgs { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+.live-strip .lg { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding-left: 14px; border-left: 1px solid var(--line); }
+.live-strip .gn { color: #eaf6ff; font-weight: 600; } .live-strip .gc { color: var(--dim); } .live-strip .gc.on { color: var(--ok); }
+.live-strip .lr { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: #0b1014; overflow: hidden; }
+.live-strip .lr a { padding: 1px 10px; color: var(--text); } .live-strip .lr a b { color: var(--p2); margin-left: 3px; } .live-strip .lr small { color: var(--dim); margin-left: 4px; }
+.live-strip .lr a.j { color: var(--p1); border-left: 1px solid var(--line); } .live-strip .lr a:hover { background: #9ff7ff14; text-decoration: none; }
+.live-strip .lr.quiet { padding: 1px 10px; color: var(--dim); }
+.embedded .live-strip { display: none !important; }
+@media (max-width: 700px) { .live-strip { padding: 7px 16px; } }
