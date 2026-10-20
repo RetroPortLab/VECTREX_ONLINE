@@ -134,6 +134,9 @@
   .log p { margin: 0 0 4px; } .log time { color: var(--dim); margin-right: 8px; }
   .howto { padding: 12px 14px 14px; color: var(--dim); }
   .howto ol { margin: 0; padding-left: 18px; } .howto li { margin-bottom: 8px; }
+  .teamhead { font-weight: 600; letter-spacing: .12em; padding: 10px 10px 4px !important; border-bottom: 1px solid var(--line); } .teamhead b { margin-left: 8px; font-size: 16px; }
+  .div { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 99px; border: 1px solid #ffffff30; }
+  .div.Bronze { color: #d09a6a; } .div.Silver { color: #cfd8de; } .div.Gold { color: #ffd76e; } .div.Platinum { color: #7ff0e0; } .div.Diamond { color: #8fb8ff; } .div.Champion { color: #ff8ad8; }
   pre { margin: 6px 0 0; background: #070a0d; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--text);
         white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 </style>
@@ -212,7 +215,7 @@
     sv.ships = m.ships; sv.bul = m.bul; sv.at = performance.now(); sv.win = m.win; sv.rk = m.rk;
   }
   function onRoster(players) {
-    for (const p of players) { sv.names[p[0]] = p[4]; sv.bots[p[0]] = !!(p[1] & 8); }
+    for (const p of players) { sv.names[p[0]] = p[4]; sv.bots[p[0]] = !!(p[1] & 8); bv.team[p[0]] = (p[1] & 4) ? 1 : 0; if (p[5]) { bv.rating[p[0]] = p[5]; bv.div[p[0]] = p[6]; } }
   }
   function onSev(m) {
     if (m.room !== room) return;
@@ -307,6 +310,63 @@
     }
     if (rv.evlast === null) { rv.evlast = 0; for (const e of m.ev || []) rv.evlast = e[0]; }
   }
+  // BOOST BALL: {t:"bsn"} every server tick (60 ms): every car, the ball, the pads, the clock and score, and the last events.
+  const bv = { cars: new Map(), ball: { x: 128, y: 128, vx: 0, vy: 0, dx: 128, dy: 128, goal: 0, trail: [] }, st: 0, cd: 0, clock: 0, ot: 0, sa: 0, sb: 0, pads: 63, win: 3,
+    tick: 60, at: 0, evlast: null, fx: [], team: {}, rating: {}, div: {}, goalAt: 0, goalTeam: 0, goalWho: '', shakeAt: 0, shakeMag: 0, last: 0, overAt: 0 };
+  const TEAM_C = ['#5ff0ff', '#ff8a4d'], TEAM_N = ['ALPHA', 'BETA'];
+  const PAD_POS = [[40, 80, 1], [216, 80, 1], [40, 176, 1], [216, 176, 1], [128, 66, 0], [128, 190, 0]];
+  const fxBurst = (x, y, n, speed, c, life) => {
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, v = speed * (0.25 + Math.random() * 0.75); bv.fx.push({ k: 's', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t0, life: life * (0.6 + Math.random() * 0.4), c }); }
+    if (bv.fx.length > 700) bv.fx.splice(0, bv.fx.length - 700);
+  };
+  const fxRing = (x, y, c, life, size) => bv.fx.push({ k: 'r', x, y, t0: performance.now(), life, c, size: size || 40 });
+  const shakeIt = (mag) => { bv.shakeAt = performance.now(); bv.shakeMag = Math.max(mag, bv.shakeMag * 0.5); };
+  function onBsn(m) {
+    if (m.room !== room) return;
+    const now = performance.now();
+    if (m.full) bv.evlast = null;
+    const seen = new Set();
+    for (const [id, x, y, ang, fl, vx, vy, boost] of m.cars || []) {
+      seen.add(id);
+      let c = bv.cars.get(id);
+      if (!c) { c = { dx: x, dy: y, dang: ang, trail: [] }; bv.cars.set(id, c); }
+      Object.assign(c, { x, y, ang, fl, vx, vy, boost, at: now });
+      bv.team[id] = (fl & 4) ? 1 : 0;
+    }
+    for (const id of [...bv.cars.keys()]) if (!seen.has(id)) bv.cars.delete(id);
+    const b = m.ball || [128, 128, 0, 0, 0];
+    Object.assign(bv.ball, { x: b[0], y: b[1], vx: b[2], vy: b[3], goal: b[4], at: now });
+    const prevSt = bv.st;
+    Object.assign(bv, { st: m.st, cd: m.cd, clock: m.clock, ot: m.ot, sa: m.sa, sb: m.sb, pads: m.pads, win: m.win, tick: m.tick_ms || 60, at: now });
+    if (m.st === 4 && prevSt !== 4) bv.overAt = now;
+    for (const e of m.ev || []) {
+      const [eid, kind, x, y, a, bb] = e;
+      if (bv.evlast === null) continue;
+      if (eid === bv.evlast || ((eid - bv.evlast) & 255) >= 128) continue;
+      bv.evlast = eid;
+      const tc = (id) => TEAM_C[bv.team[id] || 0];
+      if (kind === 1) {                                               // a goal: a, team that scored; b, who
+        const c = TEAM_C[a];
+        bv.goalAt = now; bv.goalTeam = a; bv.goalWho = bb ? nameOf(bb) : 'own goal';
+        fxBurst(x, y, 90, 190, c, 1500); fxBurst(x, y, 50, 110, '#ffffff', 1100);
+        fxRing(x, y, c, 900, 120); fxRing(x, y, '#ffffff', 700, 70);
+        shakeIt(7);
+        addEvent({ room, ts: Date.now(), msg: `GOAL ${TEAM_N[a]}${bb ? ' — ' + nameOf(bb) : ' (own goal)'} · ${bv.sa}-${bv.sb}` });
+      } else if (kind === 2) { if (a > 90) fxBurst(x, y, 4, 50 + a / 3, '#ffffff', 350); }
+      else if (kind === 10) { fxBurst(x, y, 14, 80 + a / 2, '#ffffff', 450); fxRing(x, y, '#ffffff', 350, 22); if (a > 170) shakeIt(1.5); }
+      else if (kind === 3) {
+        const c = tc(a);
+        fxBurst(x, y, 40, 150, c, 900); fxBurst(x, y, 16, 90, '#ffffff', 700); fxRing(x, y, c, 700, 60); shakeIt(4);
+        addEvent({ room, ts: Date.now(), msg: `${nameOf(bb)} demolished ${nameOf(a)}` });
+      } else if (kind === 4) { fxRing(x, y, '#9dff7a', 500, 22); fxBurst(x, y, 10, 40, '#9dff7a', 500); }
+      else if (kind === 5) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} joined team ${TEAM_N[bb ? 1 : 0]}` });
+      else if (kind === 6) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} left` });
+      else if (kind === 8) addEvent({ room, ts: Date.now(), level: 'warn', msg: a === 2 ? `full time: a draw ${bv.sa}-${bv.sb}` : `full time: ${TEAM_N[a]} win ${bv.sa}-${bv.sb}` });
+      else if (kind === 9) { fxRing(x, y, '#ffffff', 500, 26); addEvent({ room, ts: Date.now(), msg: `save by ${nameOf(a)}` }); }
+    }
+    if (bv.evlast === null) { bv.evlast = 0; for (const e of m.ev || []) bv.evlast = e[0]; }
+  }
   async function bots(delta) {
     try { await fetch(`/api/bots?room=${encodeURIComponent(room)}&add=${delta}`, { method: 'POST' }); } catch { /* next stats tells */ }
   }
@@ -332,6 +392,7 @@
       if (m.t === 'state') onState(m);
       else if (m.t === 'ssnap') onSnap(m);
       else if (m.t === 'ast') onAst(m);
+      else if (m.t === 'bsn') onBsn(m);
       else if (m.t === 'sev') onSev(m);
       else if (m.t === 'cyc') onCyc(m);
       else if (m.t === 'sroster') { if (m.room === room) onRoster(m.players); }
@@ -375,19 +436,22 @@
     for (const r of rs) {
       const b = document.createElement('button');
       b.className = 'chip' + (r.name === room ? ' on' : '');
-      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : r.type === 'rocks' ? `${r.name} <small>${r.players.length}/8 ☄</small>` : `${r.name} <small>${r.players.length}/2</small>`;
+      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : r.type === 'rocks' ? `${r.name} <small>${r.players.length}/8 ☄</small>` : r.type === 'ball' ? `${r.name} <small>${r.players.length}/6 ●</small>` : `${r.name} <small>${r.players.length}/2</small>`;
       b.onclick = () => watch(r.name);
       $('rooms').appendChild(b);
     }
     const cur = rs.find((r) => r.name === room);
     const players = cur ? cur.players : [];
-    mode = cur && (cur.type === 'strike' || cur.type === 'cycles' || cur.type === 'rocks') ? cur.type : 'netlink';
+    mode = cur && (cur.type === 'strike' || cur.type === 'cycles' || cur.type === 'rocks' || cur.type === 'ball') ? cur.type : 'netlink';
+    document.querySelector('.screen').style.aspectRatio = mode === 'ball' ? '16 / 10' : '1 / 1';
     $('howGame').innerHTML = mode === 'strike'
       ? 'Build <b>VEC STRIKE</b> onto the cart (<b>netstrike</b> in WSL), start it from the multicart menu, plug in its USB.'
       : mode === 'cycles'
         ? 'Build <b>LIGHT CYCLES</b> onto the cart (<b>netcycles</b> in WSL), start it from the multicart menu, plug in its USB.'
         : mode === 'rocks'
           ? 'Build <b>CO-OP ASTEROIDS</b> onto the cart (<b>netrocks</b> in WSL), start it from the multicart menu, plug in its USB.'
+        : mode === 'ball'
+          ? 'Build <b>BOOST BALL</b> onto the cart (<b>netboost</b> in WSL), start it from the multicart menu, plug in its USB.'
         : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
     $('howSim').innerHTML = mode === 'strike'
       ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Add bots above: they fly by the same rules.'
@@ -395,12 +459,15 @@
         ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? The server adds bots to race.'
         : mode === 'rocks'
           ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? A bot wingman flies with you.'
+        : mode === 'ball'
+          ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Bots fill each side to at least two cars.'
         : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
     $('legend').style.display = mode === 'netlink' ? '' : 'none';
-    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : '-127 … 127';
+    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : mode === 'ball' ? 'BOOST BALL pitch' : '-127 … 127';
     if (mode === 'strike') return renderStrike(cur);
     if (mode === 'cycles') return renderCycles(cur);
     if (mode === 'rocks') return renderRocks(cur);
+    if (mode === 'ball') return renderBall(cur);
     const bySlot = { 1: players.find((p) => p.slot === 1), 2: players.find((p) => p.slot === 2) };
     $('players').innerHTML = [1, 2].map((s) => card(s, bySlot[s])).join('');
     for (const s of [1, 2]) if (live[s] && bySlot[s]) drawIO(s, live[s]);
@@ -480,6 +547,38 @@
     document.querySelector('.summary div:nth-child(3) dt').textContent = 'Console updates / s';
     $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
     drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
+  }
+
+  function renderBall(r) {
+    for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = p.bot; bv.team[p.slot] = p.team; if (p.rating) { bv.rating[p.slot] = p.rating; bv.div[p.slot] = p.division; } }
+    const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
+    const stateName = ['waiting for drivers', 'kick-off', 'playing', 'goal!', 'full time'][r.state] || '';
+    const side = (t) => {
+      const ps = r.players.filter((p) => p.team === t).sort((a, b) => b.goals - a.goals || b.assists - a.assists);
+      const rows = ps.map((p) => {
+        const link = p.bot ? '<span class="tagb">BOT</span>'
+          : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+        const lg = p.rating ? `<span class="div ${esc(p.division || '')}">${esc(p.division || '')}</span> ${p.rating}` : (p.account || p.bot ? '–' : '<span style="color:var(--dim)">guest</span>');
+        const state = p.bot ? 'bot' : !p.inGame ? 'title screen' : p.alive ? 'driving' : 'demolished';
+        return `<tr class="${p.alive || !p.inGame ? '' : 'dead'}"><td><span class="sw" style="color:${TEAM_C[t]};background:${TEAM_C[t]}"></span>${esc(p.name)}</td>
+          <td class="num">${p.goals}</td><td class="num">${p.assists}</td><td class="num">${p.saves}</td><td>${lg}</td><td>${link}</td><td style="color:var(--dim)">${state}</td></tr>`;
+      }).join('');
+      return `<tr><td colspan="7" class="teamhead" style="color:${TEAM_C[t]}">${TEAM_N[t]} <b>${t ? r.sb : r.sa}</b></td></tr>${rows}`;
+    };
+    $('players').innerHTML = `<section class="panel strike">
+      <div class="bar"><span class="title">boost ball</span><span class="round">${stateName} · ${TEAM_N[0]} ${r.sa} – ${r.sb} ${TEAM_N[1]}</span>
+        <span class="bots">bots ${nb} ${botAdmin ? '<button onclick="vsBots(-1)" title="remove a bot from each side">−</button><button onclick="vsBots(1)" title="add a bot to each side">+</button>' : ''}</span></div>
+      <div class="board-wrap"><table class="board"><thead><tr><th>Car</th><th class="num">Goals</th><th class="num">Assists</th><th class="num">Saves</th><th>League</th><th>Link</th><th>Now</th></tr></thead>
+      <tbody>${r.players.length ? side(0) + side(1) : '<tr><td colspan="7" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start a console in this room.</td></tr>'}</tbody></table></div></section>`;
+    $('e2e').innerHTML = `${humans.length} <small>consoles</small>`;
+    $('e2eFrames').innerHTML = `${nb} <small>bots</small>`;
+    $('relayed').textContent = humans.reduce((n, p) => n + (p.inHz || 0), 0) || '–';
+    $('linkNote').textContent = humans.length ? 'RTT of each console to the relay' : 'no consoles yet';
+    document.querySelector('.summary div:nth-child(1) dt').textContent = 'Consoles';
+    document.querySelector('.summary div:nth-child(2) dt').textContent = 'Bots';
+    document.querySelector('.summary div:nth-child(3) dt').textContent = 'Console updates / s';
+    $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
+    drawChartSeries(humans.slice(0, 8).map((p) => ({ c: TEAM_C[p.team], pts: p.rttHist || [] })));
   }
 
   function renderCycles(r) {
@@ -574,6 +673,7 @@
     if (mode === 'strike') { drawArena(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     if (mode === 'cycles') { drawCycles(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     if (mode === 'rocks') { drawRocks(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
+    if (mode === 'ball') { drawBall(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     for (const slot of [1, 2]) {
       const p = live[slot];
       if (!p) continue;
@@ -737,6 +837,176 @@
       sctx.fillText('waiting for pilots in room "' + room + '"', w / 2, h / 2);
     }
     sctx.textAlign = 'start'; sctx.shadowBlur = 0;
+  }
+
+  // The pitch: neon on black, drawn with additive light. After the scene is drawn it is copied down, blurred and
+  // added back on top, so every line and spark blooms.
+  const bloomCv = document.createElement('canvas'), bctx = bloomCv.getContext('2d');
+  const bloomOk = 'filter' in bctx;
+  const lerpA = (a, b, t) => a + (((b - a + 128) % 256 + 256) % 256 - 128) * t;
+  function drawBall(sx0, sy0, k0, d, now, w, h) {
+    const dt = Math.min(64, now - (bv.last || now)); bv.last = now;
+    const topH = 56 * d, botH = 20 * d, mx = 16 * d;
+    const S = Math.min((w - 2 * mx) / 262, (h - topH - botH) / 142);
+    const cx = w / 2, cy = topH + (h - topH - botH) / 2;
+    const FX = (x) => cx + (x - 128) * S, FY = (y) => cy - (y - 128) * S;
+    const fr = Math.min(1.5, (now - bv.at) / Math.max(30, bv.tick));
+    const ease = 1 - Math.exp(-dt / 40);
+    let shx = 0, shy = 0;
+    const sk = now - bv.shakeAt;
+    if (sk < 500) { const m = bv.shakeMag * (1 - sk / 500) * S; shx = (Math.random() - 0.5) * m * 2; shy = (Math.random() - 0.5) * m * 2; }
+    sctx.save();
+    sctx.translate(shx, shy);
+    sctx.lineCap = sctx.lineJoin = 'round';
+    // the floor
+    const g = sctx.createRadialGradient(cx, cy, 10 * d, cx, cy, w * 0.6);
+    g.addColorStop(0, '#0b1a24'); g.addColorStop(1, '#03070b');
+    sctx.fillStyle = g; sctx.fillRect(-20, -20, w + 40, h + 40);
+    sctx.shadowBlur = 0; sctx.lineWidth = d; sctx.strokeStyle = '#5ff0ff10';
+    for (let x = 8; x <= 248; x += 20) { sctx.beginPath(); sctx.moveTo(FX(x), FY(196)); sctx.lineTo(FX(x), FY(60)); sctx.stroke(); }
+    for (let y = 60; y <= 196; y += 17) { sctx.beginPath(); sctx.moveTo(FX(8), FY(y)); sctx.lineTo(FX(248), FY(y)); sctx.stroke(); }
+    const sweep = 8 + ((now / 14) % 300) - 30;                           // a bright sweep crosses the floor
+    const sg = sctx.createLinearGradient(FX(sweep - 30), 0, FX(sweep), 0);
+    sg.addColorStop(0, '#5ff0ff00'); sg.addColorStop(1, '#5ff0ff22');
+    sctx.fillStyle = sg; sctx.fillRect(FX(Math.max(8, sweep - 30)), FY(196), Math.max(0, FX(Math.min(248, sweep)) - FX(Math.max(8, sweep - 30))), FY(60) - FY(196));
+    // lines: the touchlines glow, the goals take their team's colour
+    const glow = (c, blur) => { sctx.strokeStyle = c; sctx.shadowColor = c; sctx.shadowBlur = blur * d; };
+    const goalHit = (t) => bv.goalAt && bv.goalTeam === t && now - bv.goalAt < 2500;
+    glow('#cfeff6', 10); sctx.lineWidth = 2 * d;
+    sctx.beginPath(); sctx.moveTo(FX(8), FY(106)); sctx.lineTo(FX(8), FY(196)); sctx.lineTo(FX(248), FY(196)); sctx.lineTo(FX(248), FY(150));
+    sctx.moveTo(FX(248), FY(106)); sctx.lineTo(FX(248), FY(60)); sctx.lineTo(FX(8), FY(60)); sctx.lineTo(FX(8), FY(150)); sctx.stroke();
+    glow('#cfeff655', 6); sctx.lineWidth = 1.5 * d;
+    sctx.beginPath(); sctx.moveTo(FX(128), FY(196)); sctx.lineTo(FX(128), FY(60)); sctx.stroke();
+    sctx.beginPath(); sctx.arc(FX(128), FY(128), 22 * S, 0, Math.PI * 2); sctx.stroke();
+    sctx.beginPath(); sctx.rect(FX(8), FY(168), 36 * S, 80 * S); sctx.rect(FX(248) - 36 * S, FY(168), 36 * S, 80 * S); sctx.stroke();
+    for (const t of [0, 1]) {                                            // goals: team A defends the west one
+      const hit = goalHit(t ? 0 : 1), c = TEAM_C[t], gx = t ? 248 : 8, dir = t ? 1 : -1;
+      const pulse = hit ? 0.5 + 0.5 * Math.sin(now / 60) : 0.55;
+      glow(c, hit ? 26 : 12); sctx.lineWidth = 3 * d; sctx.globalAlpha = hit ? 1 : 0.9;
+      sctx.beginPath(); sctx.moveTo(FX(gx), FY(150)); sctx.lineTo(FX(gx + dir * 7), FY(150)); sctx.lineTo(FX(gx + dir * 7), FY(106)); sctx.lineTo(FX(gx), FY(106)); sctx.stroke();
+      sctx.lineWidth = d; sctx.globalAlpha = pulse;
+      for (let y = 112; y < 150; y += 8) { sctx.beginPath(); sctx.moveTo(FX(gx), FY(y)); sctx.lineTo(FX(gx + dir * 7), FY(y)); sctx.stroke(); }
+      sctx.globalAlpha = 1;
+    }
+    sctx.shadowBlur = 0;
+    // boost pads
+    for (let i = 0; i < PAD_POS.length; i++) {
+      const [px, py, big] = PAD_POS[i], on = bv.pads & (1 << i), r = (big ? 6.5 : 4) * S, pulse = 0.75 + 0.25 * Math.sin(now / 200 + i);
+      glow(on ? '#9dff7a' : '#9dff7a30', on ? 14 : 0); sctx.lineWidth = (on ? 2 : 1) * d; sctx.globalAlpha = on ? pulse : 0.5;
+      sctx.beginPath();
+      for (let j = 0; j < 6; j++) { const a = j * Math.PI / 3 + Math.PI / 6; sctx.lineTo(FX(px) + Math.cos(a) * r, FY(py) + Math.sin(a) * r); }
+      sctx.closePath(); sctx.stroke();
+      if (on && big) { sctx.fillStyle = '#9dff7a30'; sctx.fill(); }
+      sctx.globalAlpha = 1;
+    }
+    sctx.shadowBlur = 0;
+    // car trails, then the cars
+    for (const [id, c] of bv.cars) {
+      const tx = c.x + c.vx / 8 * fr, ty = c.y + c.vy / 8 * fr;
+      c.dx += (tx - c.dx) * ease; c.dy += (ty - c.dy) * ease; c.dang = lerpA(c.dang, c.ang, ease * 1.2);
+      c.trail.push({ x: c.dx, y: c.dy, t: now });
+      while (c.trail.length && now - c.trail[0].t > 650) c.trail.shift();
+    }
+    sctx.globalCompositeOperation = 'lighter';
+    for (const [id, c] of bv.cars) {
+      const col = TEAM_C[bv.team[id] || 0], boosting = c.fl & 2;
+      for (let i = 1; i < c.trail.length; i++) {
+        const a = c.trail[i - 1], b = c.trail[i], t = 1 - (now - b.t) / 650;
+        sctx.strokeStyle = col; sctx.globalAlpha = Math.max(0, t) * (boosting ? 0.8 : 0.3); sctx.lineWidth = (boosting ? 5 : 2.5) * d * Math.max(0.2, t);
+        sctx.beginPath(); sctx.moveTo(FX(a.x), FY(a.y)); sctx.lineTo(FX(b.x), FY(b.y)); sctx.stroke();
+      }
+      if (boosting) {                                                    // a plume of fire
+        const a = c.dang * Math.PI / 128;
+        for (let i = 0; i < 2; i++) {
+          const sp = 40 + Math.random() * 40, sa = a + Math.PI + (Math.random() - 0.5) * 0.7;
+          bv.fx.push({ k: 'f', x: c.dx - Math.sin(a) * 7, y: c.dy - Math.cos(a) * 7, vx: Math.sin(sa) * sp, vy: Math.cos(sa) * sp, t0: now, life: 350 + Math.random() * 250, c: col });
+        }
+      }
+    }
+    sctx.globalAlpha = 1; sctx.globalCompositeOperation = 'source-over';
+    sctx.font = `${10 * d}px IBM Plex Mono, monospace`;
+    for (const [id, c] of bv.cars) {
+      const col = TEAM_C[bv.team[id] || 0], a = c.dang * Math.PI / 128, s = Math.sin(a), co = Math.cos(a);
+      const P = (sd, f) => [FX(c.dx + sd * co + f * s), FY(c.dy - sd * s + f * co)];
+      glow(col, 16); sctx.strokeStyle = col; sctx.lineWidth = 2.2 * d;
+      const hull = [P(0, 10), P(5.5, 3), P(5.5, -7), P(-5.5, -7), P(-5.5, 3)];
+      sctx.beginPath(); hull.forEach(([x, y], i) => (i ? sctx.lineTo(x, y) : sctx.moveTo(x, y))); sctx.closePath(); sctx.stroke();
+      sctx.fillStyle = col + '30'; sctx.fill();
+      sctx.lineWidth = 1.2 * d; sctx.beginPath(); const [a1, b1] = P(-4, 2), [a2, b2] = P(4, 2); sctx.moveTo(a1, b1); sctx.lineTo(a2, b2); sctx.stroke();
+      sctx.shadowBlur = 0; sctx.fillStyle = col; sctx.globalAlpha = 0.85; sctx.textAlign = 'center';
+      sctx.fillText(nameOf(id) + (sv.bots[id] ? '·bot' : ''), FX(c.dx), FY(c.dy) - 16 * d); sctx.textAlign = 'start'; sctx.globalAlpha = 1;
+    }
+    // the ball
+    const B = bv.ball;
+    B.dx += ((B.x + B.vx / 8 * fr) - (B.dx === undefined ? B.x : B.dx)) * ease * 1.3; B.dy += ((B.y + B.vy / 8 * fr) - (B.dy === undefined ? B.y : B.dy)) * ease * 1.3;
+    B.trail.push({ x: B.dx, y: B.dy, t: now });
+    while (B.trail.length && now - B.trail[0].t > 700) B.trail.shift();
+    const spd = Math.hypot(B.vx, B.vy);
+    sctx.globalCompositeOperation = 'lighter';
+    for (let i = 1; i < B.trail.length; i++) {
+      const a = B.trail[i - 1], b = B.trail[i], t = 1 - (now - b.t) / 700;
+      sctx.strokeStyle = spd > 90 ? '#ffe9a8' : '#ffffff'; sctx.globalAlpha = Math.max(0, t) * Math.min(0.9, 0.2 + spd / 130); sctx.lineWidth = 7 * d * Math.max(0.15, t);
+      sctx.beginPath(); sctx.moveTo(FX(a.x), FY(a.y)); sctx.lineTo(FX(b.x), FY(b.y)); sctx.stroke();
+    }
+    sctx.globalAlpha = 1;
+    const br = 7 * S, halo = sctx.createRadialGradient(FX(B.dx), FY(B.dy), br * 0.3, FX(B.dx), FY(B.dy), br * (2.2 + Math.min(1.5, spd / 80)));
+    halo.addColorStop(0, '#ffffffcc'); halo.addColorStop(0.35, '#ffe9a855'); halo.addColorStop(1, '#ffe9a800');
+    sctx.fillStyle = halo; sctx.beginPath(); sctx.arc(FX(B.dx), FY(B.dy), br * 3.8, 0, Math.PI * 2); sctx.fill();
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.shadowColor = '#fff'; sctx.shadowBlur = 18 * d; sctx.strokeStyle = '#fff'; sctx.lineWidth = 2.4 * d;
+    sctx.beginPath(); sctx.arc(FX(B.dx), FY(B.dy), br, 0, Math.PI * 2); sctx.stroke();
+    sctx.lineWidth = d; sctx.beginPath(); sctx.arc(FX(B.dx), FY(B.dy), br * 0.55, 0, Math.PI * 2); sctx.stroke();
+    // particles
+    sctx.globalCompositeOperation = 'lighter';
+    bv.fx = bv.fx.filter((f) => now - f.t0 < f.life);
+    for (const f of bv.fx) {
+      const t = (now - f.t0) / 1000, left = 1 - (now - f.t0) / f.life;
+      sctx.globalAlpha = Math.max(0, left); sctx.strokeStyle = f.c; sctx.shadowColor = f.c; sctx.shadowBlur = 8 * d;
+      if (f.k === 's') {
+        const x = f.x + f.vx * t * (1 - t / 3), y = f.y + f.vy * t * (1 - t / 3);
+        sctx.lineWidth = 1.8 * d; sctx.beginPath(); sctx.moveTo(FX(x), FY(y)); sctx.lineTo(FX(x - f.vx * 0.05), FY(y - f.vy * 0.05)); sctx.stroke();
+      } else if (f.k === 'f') {
+        const x = f.x + f.vx * t, y = f.y + f.vy * t;
+        sctx.fillStyle = left > 0.5 ? '#ffffff' : f.c; sctx.beginPath(); sctx.arc(FX(x), FY(y), (1.2 + 3 * left) * d, 0, Math.PI * 2); sctx.fill();
+      } else {
+        sctx.lineWidth = (2.5 * left + 0.5) * d; sctx.beginPath(); sctx.arc(FX(f.x), FY(f.y), (3 + (1 - left) * f.size) * S, 0, Math.PI * 2); sctx.stroke();
+      }
+    }
+    sctx.restore();
+    sctx.globalAlpha = 1; sctx.shadowBlur = 0; sctx.globalCompositeOperation = 'source-over';
+    // the goal flash
+    const ga = now - bv.goalAt;
+    if (bv.goalAt && ga < 700) { sctx.fillStyle = TEAM_C[bv.goalTeam] + Math.round((1 - ga / 700) * 70).toString(16).padStart(2, '0'); sctx.fillRect(0, 0, w, h); }
+    // the scoreboard
+    sctx.textAlign = 'center';
+    const big = `600 ${26 * d}px IBM Plex Mono, monospace`;
+    sctx.font = big;
+    sctx.shadowColor = TEAM_C[0]; sctx.shadowBlur = 14 * d; sctx.fillStyle = TEAM_C[0]; sctx.fillText(String(bv.sa), w / 2 - 96 * d, 38 * d);
+    sctx.shadowColor = TEAM_C[1]; sctx.fillStyle = TEAM_C[1]; sctx.fillText(String(bv.sb), w / 2 + 96 * d, 38 * d);
+    sctx.shadowBlur = 0; sctx.font = `${10 * d}px IBM Plex Mono, monospace`;
+    sctx.fillStyle = TEAM_C[0]; sctx.fillText(TEAM_N[0], w / 2 - 96 * d, 16 * d); sctx.fillStyle = TEAM_C[1]; sctx.fillText(TEAM_N[1], w / 2 + 96 * d, 16 * d);
+    sctx.font = `600 ${22 * d}px IBM Plex Mono, monospace`; sctx.shadowColor = '#e8fbff'; sctx.shadowBlur = 10 * d;
+    if (bv.ot) { sctx.fillStyle = (Math.floor(now / 400) % 2) ? '#ffcf6e' : '#ff8a4d'; sctx.fillText('SUDDEN DEATH', w / 2, 34 * d); }
+    else { const m = Math.floor(bv.clock / 60), s = bv.clock % 60; sctx.fillStyle = bv.clock <= 10 && bv.st === 2 ? '#ff8a4d' : '#e8fbff'; sctx.fillText(`${m}:${String(s).padStart(2, '0')}`, w / 2, 34 * d); }
+    sctx.shadowBlur = 0;
+    // banners
+    const banner = (txt, sub, c, size) => {
+      sctx.font = `600 ${size * d}px IBM Plex Mono, monospace`; sctx.shadowColor = c; sctx.shadowBlur = 24 * d; sctx.fillStyle = c; sctx.fillText(txt, w / 2, h / 2 + 6 * d);
+      if (sub) { sctx.font = `${13 * d}px IBM Plex Mono, monospace`; sctx.shadowBlur = 8 * d; sctx.fillStyle = '#e8fbff'; sctx.fillText(sub, w / 2, h / 2 + 30 * d); }
+      sctx.shadowBlur = 0;
+    };
+    if (bv.st === 3 && bv.goalAt) banner('GOAL!', bv.goalWho.toUpperCase(), TEAM_C[bv.goalTeam], 54 + 6 * Math.sin(now / 90));
+    else if (bv.st === 1) banner(String(Math.max(1, Math.min(3, Math.ceil(bv.cd * bv.tick / 1000)))), bv.sa + bv.sb ? 'NEXT KICK-OFF' : 'KICK-OFF', '#e8fbff', 64);
+    else if (bv.st === 4) banner(bv.win === 2 ? 'DRAW' : `${TEAM_N[bv.win]} WIN`, `${bv.sa} – ${bv.sb}`, bv.win === 2 ? '#e8fbff' : TEAM_C[bv.win], 46);
+    else if (bv.st === 0 && !bv.cars.size) { sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.fillText('waiting for drivers in room "' + room + '"', w / 2, h / 2); }
+    sctx.textAlign = 'start';
+    // bloom: the whole picture, blurred, added on top
+    if (bloomOk) {
+      const bw = Math.max(2, w >> 1), bh = Math.max(2, h >> 1);
+      if (bloomCv.width !== bw || bloomCv.height !== bh) { bloomCv.width = bw; bloomCv.height = bh; }
+      bctx.clearRect(0, 0, bw, bh); bctx.drawImage(scr, 0, 0, bw, bh);
+      sctx.save(); sctx.globalCompositeOperation = 'lighter'; sctx.filter = `blur(${5 * d}px)`; sctx.globalAlpha = 0.85; sctx.drawImage(bloomCv, 0, 0, w, h); sctx.restore();
+    }
   }
 
   function drawCycles(sx, sy, k, d, now, w, h) {

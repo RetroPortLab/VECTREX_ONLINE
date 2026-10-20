@@ -16,6 +16,7 @@ const { WebSocketServer } = require('ws');
 const games = require('./games');
 const { createStore } = require('./store');
 const auth = require('./auth');
+const league = require('./league');
 
 const PORT = process.env.PORT || 10000;
 const MAX_ROOMS = 200;
@@ -160,6 +161,15 @@ async function api(req, res, url) {
     const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 50));
     try {
       return json(res, 200, { game: g.id, period, rows: await store.leaderboard(g.id, period, g.leaderboard.order, limit) });
+    } catch (e) { return json(res, 503, { error: 'the scores database is not answering' }); }
+  }
+  if (p === '/api/league' && m === 'GET') {
+    const g = games.byId.get(url.searchParams.get('game'));
+    if (!g || !g.leagues) return json(res, 404, { error: 'that game has no league' });
+    const seasons = league.recentSeasons(6);
+    const season = seasons.includes(url.searchParams.get('season')) ? url.searchParams.get('season') : seasons[0];
+    try {
+      return json(res, 200, { game: g.id, season, seasons, placement: league.PLACEMENT, divisions: league.DIVISIONS, rows: await league.table(store, g.id, season, 100) });
     } catch (e) { return json(res, 503, { error: 'the scores database is not answering' }); }
   }
   if (p.startsWith('/api/pilots/') && m === 'GET') {

@@ -116,8 +116,22 @@ class PgStore {
     }
   }
 
+  // whole-value reads and writes for one (game, user, period): the league ratings live here
+  async getStats(game, userId, period) {
+    const rows = await this.sql`select key, value from stats where game = ${game} and user_id = ${userId} and period = ${period}`;
+    const out = {}; for (const r of rows) out[r.key] = Number(r.value);
+    return out;
+  }
+  async setStats(game, userId, period, obj) {
+    for (const [key, v] of Object.entries(obj)) {
+      if (!KEY_RE.test(key)) continue;
+      await this.sql`insert into stats (game, user_id, period, key, value) values (${game}, ${userId}, ${period}, ${key}, ${Math.round(v)})
+        on conflict (game, period, key, user_id) do update set value = excluded.value`;
+    }
+  }
+
   async leaderboard(game, period, order, limit = 50) {
-    const p = period === 'week' ? isoWeek() : 'all';
+    const p = periodOf(period);
     const keys = order.filter((k) => KEY_RE.test(k));
     const orderBy = keys.map((k) => `coalesce(max(value) filter (where key = '${k}'), 0) desc`).join(', ') || 'u.id';
     const rows = await this.sql.unsafe(
@@ -138,6 +152,11 @@ class PgStore {
       const g = games[r.game] || (games[r.game] = { all: {}, week: {} });
       g[r.period === 'all' ? 'all' : 'week'][r.key] = Number(r.value);
     }
+    const seasons = await this.sql`select game, period, key, value from stats where user_id = ${u.id} and period like 'L%'`;
+    for (const r of seasons) {
+      const g = games[r.game] || (games[r.game] = { all: {}, week: {} });
+      ((g.league ||= {})[r.period] ||= {})[r.key] = Number(r.value);
+    }
     const rounds = await this.sql`select r.id, r.game, r.room, r.ended, r.ranked, r.winner_id, r.players
       from round_players rp join rounds r on r.id = rp.round_id where rp.user_id = ${u.id} order by r.ended desc limit 15`;
     return { user: { id: u.id, username: u.username, callsign: u.callsign, created: u.created }, games, rounds };
@@ -157,6 +176,8 @@ class PgStore {
   }
 }
 
+// 'all', 'week' (this ISO week) or a league season like 'L2026-10'
+function periodOf(period) { return period === 'week' ? isoWeek() : /^L\d{4}-\d{2}$/.test(String(period)) ? period : 'all'; }
 function numify(o) { const out = {}; for (const [k, v] of Object.entries(o || {})) out[k] = Number(v); return out; }
 
 // ---- memory (local testing; nothing survives a restart) ------------------------------------
@@ -199,8 +220,15 @@ class MemStore {
       this.stats.set(k, s);
     }
   }
+  async getStats(game, userId, period) { return { ...(this.stats.get(`${game}|${period}|${userId}`) || {}) }; }
+  async setStats(game, userId, period, obj) {
+    const k = `${game}|${period}|${userId}`;
+    const s = this.stats.get(k) || {};
+    for (const [key, v] of Object.entries(obj)) if (KEY_RE.test(key)) s[key] = Math.round(v);
+    this.stats.set(k, s);
+  }
   async leaderboard(game, period, order, limit = 50) {
-    const p = period === 'week' ? isoWeek() : 'all';
+    const p = periodOf(period);
     const rows = [];
     for (const [k, s] of this.stats) {
       const [g, per, uid] = k.split('|');
@@ -220,6 +248,7 @@ class MemStore {
       if (Number(uid) !== u.id) continue;
       const e = games[g] || (games[g] = { all: {}, week: {} });
       if (per === 'all') e.all = { ...s }; else if (per === isoWeek()) e.week = { ...s };
+      else if (/^L\d{4}-\d{2}$/.test(per)) (e.league ||= {})[per] = { ...s };
     }
     const rounds = this.rounds.filter((r) => r.players.some((p) => p.userId === u.id)).slice(-15).reverse();
     return { user: this.pub(u), games, rounds };

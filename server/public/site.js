@@ -62,6 +62,19 @@ const ME = { user: null, ready: null };
   }).catch(() => {});
 })();
 
+// the league: a division badge, and a season's table (from /api/league)
+const divBadge = (d) => `<span class="div ${esc(d || '')}">${esc(d || '')}</span>`;
+const seasonName = (id) => { const [y, m] = id.slice(1).split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+async function leagueHtml(game, season) {
+  const r = await api(`/api/league?game=${game}${season ? '&season=' + season : ''}`);
+  await ME.ready;
+  if (!r.rows.length) return { r, html: `<p class="note">Nobody is placed in ${esc(seasonName(r.season))} yet. Play ${r.placement} rated matches (a signed-in pilot on each side) to enter the table.</p>` };
+  return { r, html: `<div class="scroll"><table><tr><th>#</th><th>Pilot</th><th>Division</th><th>Rating</th><th>W</th><th>L</th><th>D</th><th>Peak</th></tr>` +
+    r.rows.map((row, i) => `<tr class="${ME.user && ME.user.username === row.username ? 'me' : ''}"><td>${i + 1}</td>
+      <td><a href="/pilots/${encodeURIComponent(row.username)}">${esc(row.callsign)}</a></td><td>${divBadge(row.division)}</td>
+      <td class="big">${row.rating}</td><td>${row.wins}</td><td>${row.losses}</td><td>${row.draws}</td><td>${row.peak}</td></tr>`).join('') + '</table></div>' };
+}
+
 // a leaderboard table for a game (meta from /api/site), period 'all' or 'week'
 async function boardHtml(g, period, limit) {
   const r = await api(`/api/leaderboard?game=${g.id}&period=${period}&limit=${limit || 50}`);

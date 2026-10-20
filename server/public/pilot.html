@@ -23,6 +23,16 @@
     const st = p.games[g.id];
     if (!g.profile || !g.profile.length) continue;
     const blocks = (label, d) => `<h2>${esc(g.title)} · ${label}</h2><div class="stats">${g.profile.map((f) => `<div class="stat"><b>${(d && d[f.key]) || 0}</b><span>${esc(f.label)}</span></div>`).join('')}</div>`;
+    let lgHtml = '';
+    if (g.leagues && st && st.league) {
+      const seasons = Object.keys(st.league).sort().reverse();
+      const cur = st.league[seasons[0]], DIV = [['Bronze', 0], ['Silver', 900], ['Gold', 1050], ['Platinum', 1200], ['Diamond', 1350], ['Champion', 1500]];
+      const divOf = (l) => (l.matches < 5 ? 'Unranked' : DIV.filter(([, m]) => l.rating >= m).pop()[0]);
+      lgHtml = `<h2>${esc(g.title)} · league</h2><div class="ladder">${divBadge(divOf(cur))} <b style="font-size:22px">${cur.rating}</b><span class="note">${esc(seasonName(seasons[0]))} · ${cur.wins}W ${cur.losses}L ${cur.draws}D · peak ${cur.peak}</span></div>` +
+        (seasons.length > 1 ? `<div class="panel"><div class="scroll"><table><tr><th>Season</th><th>Division</th><th>Rating</th><th>W</th><th>L</th><th>D</th><th>Peak</th></tr>` +
+          seasons.map((id) => { const l = st.league[id]; return `<tr><td>${esc(seasonName(id))}</td><td>${divBadge(divOf(l))}</td><td class="big">${l.rating}</td><td>${l.wins}</td><td>${l.losses}</td><td>${l.draws}</td><td>${l.peak}</td></tr>`; }).join('') + '</table></div></div>' : '');
+    }
+    html += lgHtml;
     html += st ? blocks('all time', st.all) + blocks('this week', st.week) : `<h2>${esc(g.title)}</h2><p class="note">No ranked rounds yet.</p>`;
   }
   document.getElementById('games').innerHTML = html;

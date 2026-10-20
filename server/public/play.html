@@ -31,6 +31,7 @@
   .pchip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 12px; font-size: 12px; color: var(--text); background: #0b1014; }
   .pchip.me { border-color: #9ff7ff88; color: var(--p1); } .pchip.bot { color: var(--dim); font-style: italic; }
   .pchip b { color: var(--p2); font-weight: 600; margin-left: 6px; }
+  .pchip.ta { border-left: 3px solid #7ff0ff; } .pchip.tb { border-left: 3px solid #ff9f6e; }
   body.connected main > h1, body.connected main > .lead, body.connected #title { display: none; }
   details.logbox > summary { cursor: pointer; color: var(--dim); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin: 28px 0 10px; }
   @media (max-width: 700px) { #sbar .in { padding: 10px 16px; } #sbar .val { font-size: 15px; } #sbar .val.room { font-size: 17px; } }
@@ -201,21 +202,21 @@
 
   // ---- the status ----
   const kv = (rows) => rows.map(([k, v, c]) => `<dt>${esc(k)}</dt><dd class="${c || ''}">${esc(v)}</dd>`).join('');
-  const GAME = { strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', netlink: 'Link Test' };
-  const ROOMY = { strike: 1, cycles: 1, rocks: 1 };
+  const GAME = { strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', ball: 'BOOST BALL', netlink: 'Link Test' };
+  const ROOMY = { strike: 1, cycles: 1, rocks: 1, ball: 1 };
   function show(s) {
     const ok = s.cart === 'ok';
     $('title').textContent = s.game ? `${GAME[s.game]} · room ${s.room || '…'}` : 'Connecting…';
     $('tag').textContent = s.net === 'connected' ? 'online' : s.net;
     $('sdot').className = 'dot ' + (s.net === 'connected' && ok ? 'ok' : s.net.startsWith('error') || (s.cart && s.cart.startsWith('error')) ? 'bad' : 'warn');
     $('sgame').textContent = GAME[s.game] || '…'; $('sroom').textContent = s.room || '…';
-    const noun = s.game === 'strike' ? 'pilot' : s.game === 'cycles' ? 'rider' : s.game === 'rocks' ? 'ship' : 'console';
+    const noun = s.game === 'strike' ? 'pilot' : s.game === 'cycles' ? 'rider' : s.game === 'rocks' ? 'ship' : s.game === 'ball' ? 'car' : 'console';
     const bots = (s.roster || []).filter((p) => p[1] & 8).length;
     $('scount').textContent = s.net === 'left the game' ? 'you left' : `${s.peers} ${noun}${s.peers === 1 ? '' : 's'}${bots ? ` (${bots} bot${bots === 1 ? '' : 's'})` : ''}`;
     $('sping').textContent = s.rtt == null ? '–' : s.rtt + ' ms'; $('sping').className = 'val ' + (s.rtt > 150 ? 'warn' : '');
     $('plist').innerHTML = ROOMY[s.game] ? [...(s.roster || [])].sort((a, b) => a[0] - b[0]).map((p) => {
-      const rk = s.game === 'rocks', pts = rk ? p[2] * 10 : p[2];
-      return `<span class="pchip ${p[0] === s.slot ? 'me' : ''} ${p[1] & 8 ? 'bot' : ''}">${esc(String(p[4]).trim())}${p[0] === s.slot ? ' (you)' : ''}<b>${pts}</b></span>`; }).join('') : '';
+      const rk = s.game === 'rocks', pts = rk ? p[2] * 10 : p[2], tm = s.game === 'ball' ? (p[1] & 4 ? ' tb' : ' ta') : '';
+      return `<span class="pchip ${p[0] === s.slot ? 'me' : ''} ${p[1] & 8 ? 'bot' : ''}${tm}">${esc(String(p[4]).trim())}${p[0] === s.slot ? ' (you)' : ''}<b>${pts}</b></span>`; }).join('') : '';
     if (s.game) $('scanBox').hidden = true;
     left = s.net === 'left the game'; $('leave').textContent = left ? 'Rejoin game' : 'Leave game'; $('leave').disabled = !(left || s.net === 'connected');
     $('cartKv').innerHTML = kv([
@@ -223,14 +224,15 @@
       ['USB request', s.usb_ms ? s.usb_ms.toFixed(1) + ' ms' : '–', s.usb_ms > 15 ? 'warn' : ''], ['Polls', s.poll_hz + ' /s'], ['Game frames', s.game_hz + ' /s', s.game_hz && s.game_hz < 40 ? 'warn' : '']]);
     $('netKv').innerHTML = kv([
       ['Relay', s.net, s.net === 'connected' ? 'good' : s.net.startsWith('error') ? 'bad' : ''], ['Playing as', s.account ? '@' + s.account : 'guest'],
-      [s.game === 'strike' ? 'Pilots here' : s.game === 'cycles' ? 'Riders here' : s.game === 'rocks' ? 'Ships here' : 'Consoles here', s.peers], ['Round trip', s.rtt == null ? '–' : s.rtt + ' ms'],
-      ['Sent', s.sent_hz + ' /s'], ['Received', s.rx_hz + ' /s'], ['Your score', s.score ? (s.game === 'cycles' ? `${s.score[0]} wins · ${s.score[1]} crashes` : s.game === 'rocks' ? `${s.score[0] * 10} points · ${s.score[1]} rocks` : `${s.score[0]} kills · ${s.score[1]} deaths`) : '–']]);
+      [s.game === 'strike' ? 'Pilots here' : s.game === 'cycles' ? 'Riders here' : s.game === 'rocks' ? 'Ships here' : s.game === 'ball' ? 'Cars here' : 'Consoles here', s.peers], ['Round trip', s.rtt == null ? '–' : s.rtt + ' ms'],
+      ...(s.game === 'ball' ? [['League', s.league ? (s.league.placed ? `${s.league.division} · ${s.league.rating}` : `Unranked · ${s.league.matches}/5 placement`) + (s.league.delta ? ` (${s.league.delta > 0 ? '+' : ''}${s.league.delta})` : '') : s.account ? '…' : 'sign in to be rated', s.league && s.league.delta > 0 ? 'good' : s.league && s.league.delta < 0 ? 'warn' : '']] : []),
+      ['Sent', s.sent_hz + ' /s'], ['Received', s.rx_hz + ' /s'], ['Your score', s.score ? (s.game === 'cycles' ? `${s.score[0]} wins · ${s.score[1]} crashes` : s.game === 'rocks' ? `${s.score[0] * 10} points · ${s.score[1]} rocks` : s.game === 'ball' ? `${s.score[0]} goals · ${s.score[1]} assists` : `${s.score[0]} kills · ${s.score[1]} deaths`) : '–']]);
     $('scores').hidden = !(ROOMY[s.game] && s.roster.length);
     if (ROOMY[s.game] && s.roster.length) {
-      const cyc = s.game === 'cycles', rk = s.game === 'rocks';
+      const cyc = s.game === 'cycles', rk = s.game === 'rocks', bl = s.game === 'ball';
       const rows = [...s.roster].sort((a, b) => b[2] - a[2] || (rk ? b[3] - a[3] : a[3] - b[3]));
-      $('board').innerHTML = `<tr><th>#</th><th>${cyc ? 'Rider' : 'Pilot'}</th><th>${cyc ? 'Wins' : rk ? 'Score' : 'Kills'}</th><th>${cyc ? 'Crashes' : rk ? 'Rocks' : 'Deaths'}</th></tr>` + rows.map((p, i) =>
-        `<tr class="${p[0] === s.slot ? 'me' : ''}"><td>${i + 1}</td><td>${esc(String(p[4]).trim())}${p[1] & 8 ? ' <span class="note">BOT</span>' : ''}</td><td class="big">${rk ? p[2] * 10 : p[2]}</td><td>${p[3]}</td></tr>`).join('');
+      $('board').innerHTML = `<tr><th>#</th><th>${cyc ? 'Rider' : bl ? 'Car' : 'Pilot'}</th><th>${cyc ? 'Wins' : rk ? 'Score' : bl ? 'Goals' : 'Kills'}</th><th>${cyc ? 'Crashes' : rk ? 'Rocks' : bl ? 'Assists' : 'Deaths'}</th></tr>` + rows.map((p, i) =>
+        `<tr class="${p[0] === s.slot ? 'me' : ''}"><td>${i + 1}</td><td>${esc(String(p[4]).trim())}${bl ? (p[1] & 4 ? ' <span class="note">B</span>' : ' <span class="note">A</span>') : ''}${p[1] & 8 ? ' <span class="note">BOT</span>' : ''}${bl && p[5] && p[6] ? ` <span class="note">${esc(p[6])}</span>` : ''}</td><td class="big">${rk ? p[2] * 10 : p[2]}</td><td>${p[3]}</td></tr>`).join('');
     }
   }
   // coming back to this page while you were connected: pick the console up again (no prompt needed

@@ -9,6 +9,7 @@
 <div id="head"></div>
 <div class="row" style="margin:16px 0 4px"><a class="btn primary" id="play" href="/play">Play</a><a class="btn" href="/watch">Watch</a><a class="btn" id="dl" hidden download>Download</a></div>
 <p class="note" id="dlnote" hidden></p>
+<div id="league"></div>
 <div id="board"></div>
 <h2>How to play</h2><div class="panel"><div id="about"></div><dl class="controls" id="controls"></dl></div>
 </main>
@@ -29,8 +30,28 @@
     const n = document.getElementById('dlnote');
     n.hidden = false; n.textContent = `A zip with ${g.download.name}: unzip it, copy the .um2 to your UVMC2's SD card, and start it from the multicart menu. It is built with the USB monitor, so Netlink can talk to it.`;
   }
+  if (!g.download && g.cart && g.cart.build) {
+    const n = document.getElementById('dlnote');
+    n.hidden = false; n.textContent = `The ready-built cartridge file is not on the site yet. Build it yourself from the Netlink project: run ${g.cart.build} in WSL (see the README).`;
+  }
   document.getElementById('about').innerHTML = g.about.map((t) => `<p style="margin-top:0">${esc(t)}</p>`).join('');
   document.getElementById('controls').innerHTML = g.controls.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+  if (g.leagues) {
+    const lg = document.getElementById('league');
+    lg.innerHTML = '<h2>League</h2><div class="tabs" id="seasons"></div><div class="panel" id="ltbl"></div><div class="ladder" id="ladder"></div>' +
+      '<p class="note">Seasons run a calendar month. Your rating is Elo-style: it moves after every rated match, by more for an upset and for a bigger margin of goals, and half of it carries into the next season. ' +
+      'A match is rated when each side has a signed-in pilot; bots, guests and practice games never move it. You are Unranked until your 5th rated match. Leaving a rated match you are not winning counts as a loss.</p>';
+    const showL = async (season) => {
+      const { r, html } = await leagueHtml(g.id, season).catch(() => ({ r: null, html: '<span class="note">the league is unavailable</span>' }));
+      document.getElementById('ltbl').innerHTML = html;
+      if (r) {
+        document.getElementById('seasons').innerHTML = r.seasons.map((x) => `<button data-s="${x}" class="${x === r.season ? 'on' : ''}">${esc(seasonName(x))}</button>`).join('');
+        document.querySelectorAll('#seasons button').forEach((b) => (b.onclick = () => showL(b.dataset.s)));
+        document.getElementById('ladder').innerHTML = r.divisions.slice().reverse().map(([n, min]) => `${divBadge(n)} <span class="note">${min}+</span>`).join(' ');
+      }
+    };
+    showL();
+  }
   if (!g.leaderboard) return;
   const box = document.getElementById('board');
   box.innerHTML = '<h2>Leaderboard</h2><div class="tabs"><button data-p="all" class="on">All time</button><button data-p="week">This week</button></div><div class="panel" id="tbl"></div>' +

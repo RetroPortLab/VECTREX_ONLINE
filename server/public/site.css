@@ -89,3 +89,10 @@ dl.controls dt { color: var(--p2); } dl.controls dd { margin: 0; }
 .live-strip .lr.quiet { padding: 1px 10px; color: var(--dim); }
 .embedded .live-strip { display: none !important; }
 @media (max-width: 700px) { .live-strip { padding: 7px 16px; } }
+
+/* leagues */
+.div { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; border: 1px solid #ffffff30; white-space: nowrap; }
+.div.Bronze { color: #d09a6a; border-color: #d09a6a66; } .div.Silver { color: #cfd8de; border-color: #cfd8de66; } .div.Gold { color: #ffd76e; border-color: #ffd76e66; }
+.div.Platinum { color: #7ff0e0; border-color: #7ff0e066; } .div.Diamond { color: #8fb8ff; border-color: #8fb8ff66; } .div.Champion { color: #ff8ad8; border-color: #ff8ad888; }
+.div.Unranked { color: var(--dim); }
+.ladder { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; align-items: center; }

@@ -12,7 +12,7 @@
   'use strict';
   const VID = 0x2E8A, PID = 0x10DB;
   const SRAM0 = 0x20000000, SRAM1 = 0x20082000;
-  const MAGIC_STRIKE = 0x4B545356, MAGIC_NET = 0x54454E56, MAGIC_CYCLES = 0x43594356, MAGIC_ROCKS = 0x54534156;   // "VSTK", "VNET", "VCYC", "VAST"
+  const MAGIC_STRIKE = 0x4B545356, MAGIC_NET = 0x54454E56, MAGIC_CYCLES = 0x43594356, MAGIC_ROCKS = 0x54534156, MAGIC_BALL = 0x4C424256;   // "VSTK", "VNET", "VCYC", "VAST", "VBBL"
   const ST_EVERY = 40;                                           // VEC STRIKE: the ship to the relay 25 times a second
   const CY_EVERY = 100;                                          // LIGHT CYCLES: a heartbeat with the turn counter (turns go out at once)
 
@@ -189,6 +189,30 @@
     out.push([RB.OFF_COMMIT, new Pack(8).u32(commitSeq).u8(buf).skip(3).done()]);
     return out;
   }
+  // ---- BOOST BALL's mailbox (vectrex/boostball/src/vbb_box.h, bridge/ballbox.py) -------------------
+  const BB = { SIZE: 816, OFF_LOCAL: 8, LOCAL_END: 40, OFF_COMMIT: 168, OFF_SNAP: 176, SNAP_SIZE: 320, SNAP_CAR: 24, SNAP_EVT: 72, MAX_CAR: 6, MAX_EVT: 8, MAX_ROSTER: 8 };
+  function decodeBallLocal(raw) {
+    const v = dv(raw), o = BB.OFF_LOCAL;
+    return { seq: v.getUint32(o, true), f: v.getUint32(o + 4, true), fl: v.getUint8(o + 8), in: v.getUint8(o + 9), a: v.getUint8(o + 10) };
+  }
+  function ballSnapshotWrites(buf, commitSeq, snap, me) {
+    const base = BB.OFF_SNAP + buf * BB.SNAP_SIZE;
+    const cars = (snap.cars || []).slice(0, BB.MAX_CAR), y = snap.you || {}, ball = snap.ball || [128, 128, 0, 0, 0];
+    const head = new Pack(24)
+      .u32(snap.seq || 0).u8(me).u8(snap.st || 0).u8(Math.min(255, snap.cd || 0)).u8(Math.min(255, snap.sa || 0))
+      .u8(Math.min(255, snap.sb || 0)).u8(cars.length).u8((y.alive ? 1 : 0) | (y.inMatch ? 2 : 0)).u8(Math.min(255, snap.tick_ms || 60))
+      .u16(Math.min(65535, snap.clock || 0)).u8(Math.min(255, snap.np || 0)).u8(snap.ot ? 1 : 0)
+      .u8(snap.pads || 0).u8(snap.win === undefined ? 3 : snap.win).u8(y.team ? 1 : 0).u8(ball[4] || 0)
+      .u8(ball[0]).u8(ball[1]).i8(ball[2]).i8(ball[3]);
+    const out = [[base, head.done()]];
+    if (cars.length) { const p = new Pack(8 * cars.length); for (const c of cars) p.u8(c[0]).u8(c[1]).u8(c[2]).u8(c[3]).u8(c[4]).i8(c[5]).i8(c[6]).u8(Math.max(0, Math.min(255, c[7]))); out.push([base + BB.SNAP_CAR, p.done()]); }
+    const ev = new Pack(6 * BB.MAX_EVT);
+    for (const e of (snap.ev || []).slice(-BB.MAX_EVT)) for (let i = 0; i < 6; i++) ev.u8(e[i]);
+    ev.o = 6 * BB.MAX_EVT;
+    out.push([base + BB.SNAP_EVT, ev.done()]);
+    out.push([BB.OFF_COMMIT, new Pack(8).u32(commitSeq).u8(buf).skip(3).done()]);
+    return out;
+  }
   function chunks(writes, limit = 64) {
     const out = [];
     for (const [off, data] of writes) for (let i = 0; i < data.length; i += limit) out.push([off + i, data.subarray(i, i + limit)]);
@@ -265,7 +289,7 @@
       for (let i = 0; i + 1 < h.length; i += 2) {
         const c = String.fromCharCode(parseInt(h.substr(i, 2), 16));
         if (c !== '\n') { this.gameLine += c; continue; }
-        const m = /(?:VNET|VSTK|VCYC) ([0-9a-fA-F]{8})/.exec(this.gameLine);
+        const m = /(?:VNET|VSTK|VCYC|VAST|VBBL) ([0-9a-fA-F]{8})/.exec(this.gameLine);
         if (m) this.announced = parseInt(m[1], 16);
         else if (this.gameLine.trim()) this.log(`game: ${this.gameLine.trim()}`);
         this.gameLine = '';
@@ -340,6 +364,7 @@
         if (m === MAGIC_STRIKE && headerOk(h, m, SB.SIZE)) return 'strike';
         if (m === MAGIC_CYCLES && headerOk(h, m, CB.SIZE)) return 'cycles';
         if (m === MAGIC_ROCKS && headerOk(h, m, RB.SIZE)) return 'rocks';
+        if (m === MAGIC_BALL && headerOk(h, m, BB.SIZE)) return 'ball';
         if (m === MAGIC_NET && headerOk(h, m, 48)) return 'netlink';
       } catch (e) { if (this.gone) throw e; }
       return null;
@@ -357,7 +382,7 @@
         how = 'found by scanning RAM';
       }
       this.game = game;
-      this.log(`cart: ${{ strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS' }[game] || 'link test'} mailbox at ${this.addr.toString(16)} (${how})`);
+      this.log(`cart: ${{ strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', ball: 'BOOST BALL' }[game] || 'link test'} mailbox at ${this.addr.toString(16)} (${how})`);
     }
     async scan() {
       // One read at a time, like the monitor's own tools do (the cart's answers can overrun if
@@ -371,7 +396,7 @@
         const v = dv(chunk);
         for (let i = 0; i + 4 <= 256; i += 4) {
           const m = v.getUint32(i, true);
-          if (m !== MAGIC_STRIKE && m !== MAGIC_NET && m !== MAGIC_CYCLES && m !== MAGIC_ROCKS) continue;
+          if (m !== MAGIC_STRIKE && m !== MAGIC_NET && m !== MAGIC_CYCLES && m !== MAGIC_ROCKS && m !== MAGIC_BALL) continue;
           n++;
           const a = base + i;
           const game = await this.check(a);
@@ -404,6 +429,14 @@
         const raw = await this.read(this.addr, CB.LOCAL_END);
         if (!headerOk(raw, MAGIC_CYCLES, CB.SIZE)) throw new CartError('the mailbox is gone (the game restarted or another one is running)');
         const s = decodeCyclesLocal(raw);
+        if (s.seq & 1) return null;
+        this.stopped = false;
+        return s;
+      }
+      if (this.game === 'ball') {
+        const raw = await this.read(this.addr, BB.LOCAL_END);
+        if (!headerOk(raw, MAGIC_BALL, BB.SIZE)) throw new CartError('the mailbox is gone (the game restarted or another one is running)');
+        const s = decodeBallLocal(raw);
         if (s.seq & 1) return null;
         this.stopped = false;
         return s;
@@ -565,7 +598,7 @@
       if (trails.size) p.trails = new Map();
       const link = (this.linkDirty || t0 - this.lastLink > 1000) ? this.link.slice() : null;
       this.linkDirty = false;
-      if (game === 'strike' || game === 'cycles' || game === 'rocks') {
+      if (game === 'strike' || game === 'cycles' || game === 'rocks' || game === 'ball') {
         const writes = [];
         if (link) { this.linkSeq++; writes.push([SB.OFF_LINK, encodeLink(link[0], link[1], link[2], this.linkSeq)]); this.lastLink = t0; }
         if (roster) writes.push(...rosterWrites(...roster));
@@ -573,7 +606,7 @@
         if (snap) {
           const buf = 1 - this.cur;                          // the one the game is not reading, then the commit
           this.commit++;
-          writes.push(...({ cycles: cycleSnapshotWrites, rocks: rockSnapshotWrites }[game] || snapshotWrites)(buf, this.commit, snap[0], snap[1]));
+          writes.push(...({ cycles: cycleSnapshotWrites, rocks: rockSnapshotWrites, ball: ballSnapshotWrites }[game] || snapshotWrites)(buf, this.commit, snap[0], snap[1]));
           this.cur = buf;
         }
         if (writes.length) await cart.writeBox(writes);
@@ -597,9 +630,9 @@
     connectNet(game) {
       if (this.stopped) return;
       this.set({ net: 'connecting' });
-      if (game === 'strike' || game === 'cycles' || game === 'rocks') this.setLink(undefined, undefined, SB.VL_RELAY);
+      if (game === 'strike' || game === 'cycles' || game === 'rocks' || game === 'ball') this.setLink(undefined, undefined, SB.VL_RELAY);
       this.log(`net: connecting to ${this.wsUrl}`);
-      const room = this.room || (game === 'strike' ? 'arena' : game === 'cycles' ? 'grid' : game === 'rocks' ? 'field' : 'test');
+      const room = this.room || (game === 'strike' ? 'arena' : game === 'cycles' ? 'grid' : game === 'rocks' ? 'field' : game === 'ball' ? 'pitch' : 'test');
       const ws = new WebSocket(this.wsUrl);
       this.ws = ws; this.game = game;
       ws.onopen = () => {
@@ -647,6 +680,13 @@
           this.wsend({ t: 'cy', f: s.f, fl: s.fl, n: s.n, c: turns });
           this.cnt.sent++;
         }
+      } else if (game === 'ball') {
+        const key = `${s.fl & 8}.${s.in}.${s.a}`;
+        if ((key !== this.lastKey && now - this.lastSt >= ST_EVERY) || now - this.lastCy >= CY_EVERY) {
+          this.lastKey = key; this.lastCy = now; this.lastSt = now;
+          this.wsend({ t: 'bb', f: s.f, fl: s.fl, in: s.in, a: s.a });
+          this.cnt.sent++;
+        }
       } else if (game === 'rocks') {
         const key = `${s.fl & 8}.${s.in}.${s.a}.${s.sh}.${s.hy}`;
         if (key !== this.lastKey || now - this.lastCy >= CY_EVERY) {
@@ -662,16 +702,20 @@
     }
 
     onMessage(m, game) {
-      const cycles = game === 'cycles', rocks = game === 'rocks', strike = game === 'strike' || cycles || rocks;     // strike: the games with a room, roster and snapshots
+      const cycles = game === 'cycles', rocks = game === 'rocks', ball = game === 'ball', strike = game === 'strike' || cycles || rocks || ball;     // strike: the games with a room, roster and snapshots
       switch (m.t) {
         case 'ping': this.wsend({ t: 'pong', id: m.id }); break;
         case 'rtt': this.status.rtt = toI(m.ms); this.setLink(this.status.rtt); break;
+        case 'league':             // BOOST BALL: your rating, and what the last match did to it
+          this.status.league = { rating: m.rating, division: m.division, placed: m.placed, matches: m.matches, delta: m.delta === undefined ? null : m.delta, season: m.season };
+          if (m.delta !== undefined && m.delta !== null) this.log(`league: ${m.delta >= 0 ? '+' : ''}${m.delta} → ${m.rating} (${m.division})`);
+          break;
         case 'left': this.left = true; this.set({ net: 'left the game', peers: 0, pilots: 0 }); this.log('net: you left the game (the link stays up)'); break;
         case 'error': this.log(`net: server says: ${m.msg}`); this.set({ net: `error: ${m.msg}` }); break;
         case 'snap': {
           if (!strike) break;
           this.cnt.rx++;
-          if (rocks) {
+          if (rocks || ball) {
             this.pending.snap = [m, this.myId];
             this.status.pilots = this.status.peers = m.np || 0;
             this.setLink(undefined, Math.min(255, m.np || 0));
@@ -695,7 +739,7 @@
         case 'roster': {
           if (!strike) break;
           const players = m.players || [];
-          this.pending.roster = [m.seq || 0, cycles || rocks ? 0 : (m.rk || 15), players.slice(0, rocks ? RB.MAX_ROSTER : 20)];
+          this.pending.roster = [m.seq || 0, cycles || rocks || ball ? 0 : (m.rk || 15), players.slice(0, rocks || ball ? RB.MAX_ROSTER : 20)];
           const mine = players.find((p) => p[0] === this.myId);
           this.status.roster = players; this.status.rk = m.rk || 15;
           if (mine) this.status.score = [mine[2], mine[3]];
@@ -707,7 +751,7 @@
             this.myId = toI(m.id);
             this.status.slot = this.myId; this.status.peers = toI(m.peers); this.status.account = m.account || null;
             this.setLink(undefined, toI(m.peers), SB.VL_ROOM);
-            this.log(`net: in ${cycles ? 'LIGHT CYCLES' : rocks ? 'CO-OP ASTEROIDS' : 'VEC STRIKE'} room '${m.room}' as P${this.myId} (${m.peers} ${cycles ? 'rider' : rocks ? 'ship' : 'pilot'}(s) here)${m.account ? ` as ${m.account}` : ' as a guest'}`);
+            this.log(`net: in ${cycles ? 'LIGHT CYCLES' : rocks ? 'CO-OP ASTEROIDS' : ball ? 'BOOST BALL' : 'VEC STRIKE'} room '${m.room}' as P${this.myId} (${m.peers} ${cycles ? 'rider' : rocks ? 'ship' : ball ? 'car' : 'pilot'}(s) here)${m.account ? ` as ${m.account}` : ' as a guest'}`);
           } else {
             this.status.slot = toI(m.slot); this.status.peers = toI(m.peers);
             this.setLink(undefined, toI(m.peers), toI(m.slot));
