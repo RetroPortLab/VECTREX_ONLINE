@@ -21,7 +21,7 @@
   const g = s.games.find((x) => x.id === id);
   if (!g) { document.getElementById('head').innerHTML = '<h1>No such game</h1>'; return; }
   document.title = g.title + ' — Retro Port Lab';
-  document.getElementById('head').innerHTML = `<h1>${esc(g.title)}</h1><p class="lead">${esc(g.tagline)}</p>`;
+  document.getElementById('head').innerHTML = `<h1>${esc(g.title)}</h1><p class="lead">${esc(g.tagline)}</p><p class="note" style="margin:-8px 0 16px">Needs a real Vectrex with a UVMC2 cartridge.</p>`;
   document.getElementById('play').href = '/play?game=' + g.id;
   if (g.download) {
     const a = document.getElementById('dl');
