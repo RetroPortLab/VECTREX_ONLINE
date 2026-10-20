@@ -44,7 +44,7 @@
     <div><span class="lbl">In the room</span><span class="val" id="scount">–</span></div>
     <div><span class="lbl">Ping</span><span class="val" id="sping">–</span></div>
     <span class="sp"></span>
-    <div class="btns"><a class="btn" id="watch" href="/watch" target="_blank">Watch this room</a><button id="leave" title="Drop out of the game but keep the console linked">Leave game</button><button id="stop">Disconnect</button></div>
+    <div class="btns"><a class="btn" id="watch" href="/watch">Watch this room</a><button id="leave" title="Drop out of the game but keep the console linked">Leave game</button><button id="stop">Disconnect</button></div>
   </div>
   <div id="plist"></div>
 </div></div>
@@ -272,6 +272,7 @@
     e.preventDefault();
     if (href === '/play') showLive(); else showFrame(href);
   });
+  $('watch').addEventListener('click', (e) => { if (!bridge || e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); showFrame($('watch').getAttribute('href')); });
   window.addEventListener('beforeunload', () => { if (bridge) bridge.stop(); });
 })();
 </script>
