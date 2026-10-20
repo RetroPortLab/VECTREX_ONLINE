@@ -111,7 +111,7 @@
   if (!window.isSecureContext || !('serial' in navigator)) {
     const b = $('nosupport'); b.hidden = false;
     b.textContent = !window.isSecureContext ? 'This page needs https:// to reach your console.'
-      : 'This browser can\'t talk to USB devices. Use Chrome, Edge or Opera on a desktop computer, or the VectrexBridge app for Windows.';
+      : 'This browser can\'t talk to USB devices. Use Chrome, Edge or Opera on a desktop computer, or the Vectrex Netlink app for Windows.';
     $('go').disabled = $('pick').disabled = true;
   }
 

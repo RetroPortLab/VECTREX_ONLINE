@@ -27,7 +27,7 @@
     const a = document.getElementById('dl');
     a.href = '/downloads/' + g.download.file; a.hidden = false; a.textContent = 'Download ' + g.title;
     const n = document.getElementById('dlnote');
-    n.hidden = false; n.textContent = `A zip with ${g.download.name}: unzip it, copy the .um2 to your UVMC2's SD card, and start it from the multicart menu. It is built with the USB monitor, so the bridge can talk to it.`;
+    n.hidden = false; n.textContent = `A zip with ${g.download.name}: unzip it, copy the .um2 to your UVMC2's SD card, and start it from the multicart menu. It is built with the USB monitor, so Netlink can talk to it.`;
   }
   document.getElementById('about').innerHTML = g.about.map((t) => `<p style="margin-top:0">${esc(t)}</p>`).join('');
   document.getElementById('controls').innerHTML = g.controls.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');

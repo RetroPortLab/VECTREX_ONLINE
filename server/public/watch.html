@@ -390,11 +390,11 @@
           ? 'Build <b>CO-OP ASTEROIDS</b> onto the cart (<b>netrocks</b> in WSL), start it from the multicart menu, plug in its USB.'
         : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
     $('howSim').innerHTML = mode === 'strike'
-      ? 'Or run <b>VectrexBridge</b> with this room. Alone? Add bots above: they fly by the same rules.'
+      ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Add bots above: they fly by the same rules.'
       : mode === 'cycles'
-        ? 'Or run <b>VectrexBridge</b> with this room. Alone? The server adds bots to race.'
+        ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? The server adds bots to race.'
         : mode === 'rocks'
-          ? 'Or run <b>VectrexBridge</b> with this room. Alone? A bot wingman flies with you.'
+          ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? A bot wingman flies with you.'
         : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
     $('legend').style.display = mode === 'netlink' ? '' : 'none';
     $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : '-127 … 127';

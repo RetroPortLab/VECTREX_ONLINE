@@ -50,7 +50,7 @@
 <body>
 <main>
   <h1>vectrex <span>cart test</span></h1>
-  <p class="lede">Can this browser talk to the UVMC2 over USB? If it can, the bridge can run as a web page, with nothing to install.</p>
+  <p class="lede">Can this browser talk to the UVMC2 over USB? If it can, Netlink can run as a web page, with nothing to install.</p>
 
   <section class="panel">
     <div class="row">
@@ -58,7 +58,7 @@
       <button id="find" class="plain" disabled>Find the game</button>
       <button id="copy" class="plain">Copy results</button>
     </div>
-    <p class="hint">Start VEC STRIKE (or the link test) on the cart, plug its USB in, and close VectrexBridge first: one program at a time can hold the port. When Chrome lists the cart, pick the <b>first</b> of its two ports.</p>
+    <p class="hint">Start VEC STRIKE (or the link test) on the cart, plug its USB in, and close the Vectrex Netlink app first: one program at a time can hold the port. When Chrome lists the cart, pick the <b>first</b> of its two ports.</p>
   </section>
 
   <section class="panel">
@@ -110,8 +110,8 @@
     if (['api', 'open', 'mon', 'speed'].every((k) => state[k] && state[k].s === 'pass')) {
       v.className = 'verdict good';
       v.textContent = state.game && state.game.s === 'pass'
-        ? 'This browser can run the bridge: the web bridge will work here.'
-        : 'This browser can talk to the cart: the web bridge will work here. (Find the game to check the last part.)';
+        ? 'This browser can run Netlink: it will work here as a web page.'
+        : 'This browser can talk to the cart: Netlink will work here as a web page. (Find the game to check the last part.)';
       return;
     }
     v.className = 'verdict'; v.textContent = '';
@@ -197,7 +197,7 @@
     } catch (e) {
       $('go').disabled = false;
       if (e.name === 'NotFoundError') return check('open', 'fail', 'No port was chosen. If the cart wasn\'t in the list: is it plugged in, with a game built with the monitor running (not the multicart menu)?');
-      return check('open', 'fail', `${e.name}: ${e.message}. If another program has the port (VectrexBridge, the IDE's debugger), close it and try again.`);
+      return check('open', 'fail', `${e.name}: ${e.message}. If another program has the port (the Vectrex Netlink app, the IDE's debugger), close it and try again.`);
     }
 
     // the monitor
@@ -306,7 +306,7 @@
       const rate = hiddenSecs >= 1 ? Math.round(hiddenReads / Math.max(1, Math.floor(hiddenSecs))) : null;
       if (hiddenSecs < 10) { $('bg').textContent = `that was only ${hiddenSecs.toFixed(0)} s: stay away 20 s for a real check.`; return; }
       const ok = rate >= 40;
-      check('bg', ok ? 'pass' : 'fail', `${rate} reads/s while hidden for ${hiddenSecs.toFixed(0)} s${ok ? '' : ' (Chrome slowed it down: the bridge would need its tab in front)'}`);
+      check('bg', ok ? 'pass' : 'fail', `${rate} reads/s while hidden for ${hiddenSecs.toFixed(0)} s${ok ? '' : ' (Chrome slowed it down: Netlink would need its tab in front)'}`);
       $('bg').textContent = ok ? 'it kept going.' : 'it slowed down.';
     }
   });
