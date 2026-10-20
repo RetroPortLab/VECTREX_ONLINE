@@ -21,6 +21,8 @@ a:hover { text-decoration: underline; }
 .site-nav .links a:hover, .site-nav .links a.on { color: var(--p1); text-decoration: none; }
 .site-nav .who { margin-left: auto; display: flex; gap: 14px; align-items: center; }
 .patreon { border: 1px solid #ff6b6b66; color: #ff9a9a; border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+.coffee { border: 1px solid #ffcf6e66; color: var(--p2); border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+.coffee:hover { background: #ffcf6e18; text-decoration: none; }
 .patreon:hover { background: #ff6b6b18; text-decoration: none; }
 .page { width: 100%; max-width: 1040px; margin: 0 auto; padding: 28px 24px 48px; flex: 1; }
 .site-foot { border-top: 1px solid var(--line); padding: 18px 24px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 12px; }

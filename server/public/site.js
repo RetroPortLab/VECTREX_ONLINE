@@ -1,5 +1,7 @@
 // Retro Port Lab: nav, footer and helpers shared by every page.
 const PATREON = 'https://www.patreon.com/c/RetroPortLab';
+const COFFEE = 'https://buymeacoffee.com/retroportlab';
+const COFFEE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 10h1.5a2.5 2.5 0 0 1 0 5H16.5"/><path d="M8 3v2M12 3v2"/></svg>';
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 async function api(path, body) {
   const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -19,11 +21,11 @@ const ME = { user: null, ready: null };
   nav.className = 'site-nav';
   nav.innerHTML = `<a class="brand" href="/">vectrex <span>netlink</span></a>
     <div class="links"><a href="/"${here === '/' ? ' class="on"' : ''}>Games</a><a href="/play"${on('/play')}>Play</a><a href="/watch"${on('/watch')}>Watch</a></div>
-    <div class="who"><a class="patreon" href="${PATREON}" target="_blank" rel="noopener">♥ Patreon</a><span id="whoami"></span></div>`;
+    <div class="who"><a class="coffee" href="${COFFEE}" target="_blank" rel="noopener" title="Buy me a coffee">${COFFEE_ICON} Coffee</a><a class="patreon" href="${PATREON}" target="_blank" rel="noopener">♥ Patreon</a><span id="whoami"></span></div>`;
   document.body.prepend(nav);
   const foot = document.createElement('footer');
   foot.className = 'site-foot';
-  foot.innerHTML = `<span>© Retro Port Lab</span><a href="${PATREON}" target="_blank" rel="noopener">Support us on Patreon</a><span class="sp">Vectrex consoles, online.</span>`;
+  foot.innerHTML = `<span>© Retro Port Lab</span><a href="${PATREON}" target="_blank" rel="noopener">Support us on Patreon</a><a href="${COFFEE}" target="_blank" rel="noopener">${COFFEE_ICON} Buy me a coffee</a><span class="sp">Vectrex consoles, online.</span>`;
   document.body.append(foot);
   ME.ready = api('/api/me').then((m) => {
     ME.user = m.user;
