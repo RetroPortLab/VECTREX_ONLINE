@@ -15,8 +15,39 @@
   .who { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .who input { max-width: 190px; }
   .bar { height: 6px; background: #121a20; border-radius: 3px; overflow: hidden; margin-top: 6px; } .bar i { display: block; height: 100%; background: var(--p1); width: 0; }
+  /* the session bar: where you are, always visible while connected */
+  #sbar { position: sticky; top: 0; z-index: 20; background: #0a0f13f2; backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); box-shadow: 0 6px 18px #0008; }
+  #sbar .in { max-width: 1040px; margin: 0 auto; padding: 10px 24px; display: grid; gap: 8px; }
+  #sbar .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 8px; box-shadow: 0 0 0 0 transparent; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 10px #7dffb099; } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+  #sbar .lbl { display: block; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); line-height: 1.2; }
+  #sbar .val { font-size: 17px; font-weight: 600; color: #eaf6ff; line-height: 1.25; white-space: nowrap; }
+  #sbar .val.room { color: var(--p2); font-size: 20px; }
+  #sbar .sp { flex: 1; }
+  #sbar .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  #sbar .btns button, #sbar .btns a { padding: 5px 12px; font-size: 13px; }
+  #plist { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pchip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 12px; font-size: 12px; color: var(--text); background: #0b1014; }
+  .pchip.me { border-color: #9ff7ff88; color: var(--p1); } .pchip.bot { color: var(--dim); font-style: italic; }
+  .pchip b { color: var(--p2); font-weight: 600; margin-left: 6px; }
+  body.connected main > h1, body.connected main > .lead, body.connected #title { display: none; }
+  details.logbox > summary { cursor: pointer; color: var(--dim); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin: 28px 0 10px; }
+  @media (max-width: 700px) { #sbar .in { padding: 10px 16px; } #sbar .val { font-size: 15px; } #sbar .val.room { font-size: 17px; } }
 </style>
 </head><body>
+<div id="sbar" hidden><div class="in">
+  <div class="top">
+    <div><span class="lbl">Status</span><span class="val"><i class="dot" id="sdot"></i><span id="tag"></span></span></div>
+    <div><span class="lbl">Game</span><span class="val" id="sgame">–</span></div>
+    <div><span class="lbl">Room</span><span class="val room" id="sroom">–</span></div>
+    <div><span class="lbl">In the room</span><span class="val" id="scount">–</span></div>
+    <div><span class="lbl">Ping</span><span class="val" id="sping">–</span></div>
+    <span class="sp"></span>
+    <div class="btns"><a class="btn" id="watch" href="/watch" target="_blank">Watch this room</a><button id="leave" title="Drop out of the game but keep the console linked">Leave game</button><button id="stop">Disconnect</button></div>
+  </div>
+  <div id="plist"></div>
+</div></div>
 <main class="page">
 <h1>Play</h1>
 <p class="lead">Plug your Vectrex console into this computer and play over the internet, right from this page. No app to install.</p>
@@ -57,15 +88,15 @@
 </div>
 
 <div id="live" hidden>
-  <div class="row" style="margin-bottom:14px"><b id="title">Connecting…</b><span id="tag"></span><span style="flex:1"></span><a class="btn" id="watch" href="/watch" target="_blank">Watch this room</a><button id="leave" title="Drop out of the game but keep the console linked">Leave game</button><button id="stop">Disconnect</button></div>
+  <h1 id="title" style="font-size:22px">Connecting…</h1>
   <div id="scanBox" class="panel" hidden><div id="scanText">Looking for the game in the cartridge's RAM…</div><div class="bar"><i id="scanBar"></i></div>
     <p class="note" style="margin-bottom:0">This takes a few seconds the first time, only when the game hasn't announced where it is.</p></div>
+  <div id="scores" class="panel" style="margin-bottom:16px" hidden><h2 style="margin-top:0">Players in this room</h2><div class="scroll"><table id="board"></table></div></div>
   <div class="cols">
     <div class="panel"><h2 style="margin-top:0">Console</h2><dl class="kv" id="cartKv"></dl></div>
     <div class="panel"><h2 style="margin-top:0">Network</h2><dl class="kv" id="netKv"></dl></div>
   </div>
-  <div id="scores" class="panel" style="margin-top:16px" hidden><h2 style="margin-top:0">Room scoreboard</h2><div class="scroll"><table id="board"></table></div></div>
-  <h2>Log</h2><div class="panel"><pre id="log"></pre></div>
+  <details class="logbox"><summary>Log</summary><div class="panel"><pre id="log"></pre></div></details>
 </div>
 </main>
 <script src="/site.js"></script>
@@ -123,7 +154,7 @@
     let port;
     try { port = await pickPort(); }
     catch (e) { $('err').textContent = e.name === 'NotFoundError' ? 'No cartridge chosen. Is it plugged in and running a game?' : e.message; return; }
-    LS.set('rpl_active', '1');
+    LS.set('rpl_active', '1'); $('sbar').hidden = false; document.body.classList.add('connected'); $('sroom').textContent = room || 'arena';
     $('setup').hidden = true; $('live').hidden = false; $('log').textContent = '';
     $('watch').href = '/watch?room=' + encodeURIComponent(room || 'arena');
     try { wake = await navigator.wakeLock?.request('screen'); } catch { /* optional */ }
@@ -164,7 +195,7 @@
   $('leave').onclick = () => { if (!bridge) return; if (left) bridge.rejoinGame(); else bridge.leaveGame(); };
   $('stop').onclick = async () => {
     if (bridge) await bridge.stop();
-    bridge = null; LS.set('rpl_active', ''); showLive(); try { wake?.release(); } catch { /* ok */ }
+    bridge = null; LS.set('rpl_active', ''); $('sbar').hidden = true; document.body.classList.remove('connected'); showLive(); try { wake?.release(); } catch { /* ok */ }
     $('live').hidden = true; $('setup').hidden = false; $('remembered').textContent = 'Disconnected. Press Connect to go again.';
   };
 
@@ -175,7 +206,16 @@
   function show(s) {
     const ok = s.cart === 'ok';
     $('title').textContent = s.game ? `${GAME[s.game]} · room ${s.room || '…'}` : 'Connecting…';
-    $('tag').innerHTML = s.net === 'connected' ? '<span class="tag live">online</span>' : `<span class="tag">${esc(s.net)}</span>`;
+    $('tag').textContent = s.net === 'connected' ? 'online' : s.net;
+    $('sdot').className = 'dot ' + (s.net === 'connected' && ok ? 'ok' : s.net.startsWith('error') || (s.cart && s.cart.startsWith('error')) ? 'bad' : 'warn');
+    $('sgame').textContent = GAME[s.game] || '…'; $('sroom').textContent = s.room || '…';
+    const noun = s.game === 'strike' ? 'pilot' : s.game === 'cycles' ? 'rider' : s.game === 'rocks' ? 'ship' : 'console';
+    const bots = (s.roster || []).filter((p) => p[1] & 8).length;
+    $('scount').textContent = s.net === 'left the game' ? 'you left' : `${s.peers} ${noun}${s.peers === 1 ? '' : 's'}${bots ? ` (${bots} bot${bots === 1 ? '' : 's'})` : ''}`;
+    $('sping').textContent = s.rtt == null ? '–' : s.rtt + ' ms'; $('sping').className = 'val ' + (s.rtt > 150 ? 'warn' : '');
+    $('plist').innerHTML = ROOMY[s.game] ? [...(s.roster || [])].sort((a, b) => a[0] - b[0]).map((p) => {
+      const rk = s.game === 'rocks', pts = rk ? p[2] * 10 : p[2];
+      return `<span class="pchip ${p[0] === s.slot ? 'me' : ''} ${p[1] & 8 ? 'bot' : ''}">${esc(String(p[4]).trim())}${p[0] === s.slot ? ' (you)' : ''}<b>${pts}</b></span>`; }).join('') : '';
     if (s.game) $('scanBox').hidden = true;
     left = s.net === 'left the game'; $('leave').textContent = left ? 'Rejoin game' : 'Leave game'; $('leave').disabled = !(left || s.net === 'connected');
     $('cartKv').innerHTML = kv([
