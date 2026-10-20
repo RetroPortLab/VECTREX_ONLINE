@@ -33,7 +33,9 @@ let dbOk = false;
 const rooms = new Map();
 const monitors = new Set();
 
-const cleanRoom = (r) => String(r || 'test').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32) || 'test';
+// LOCK_ROOM=beta puts every console, dashboard and bot request in that one room, whatever it asks for
+const LOCK_ROOM = String(process.env.LOCK_ROOM || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
+const cleanRoom = (r) => LOCK_ROOM || String(r || 'test').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32) || 'test';
 
 function send(ws, msg) {
   if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
@@ -129,7 +131,7 @@ async function api(req, res, url) {
     let counts = { users: 0, rounds: 0 };
     try { counts = await store.counts(); } catch { /* db asleep */ }
     return json(res, 200, {
-      brand: 'Retro Port Lab', persistent: store.persistent && dbOk, counts, rooms: live,
+      brand: 'Retro Port Lab', lockedRoom: LOCK_ROOM || null, persistent: store.persistent && dbOk, counts, rooms: live,
       games: games.list.map((g) => ({ ...games.meta(g), live: live.filter((r) => r.game === g.id).reduce((n, r) => n + r.consoles, 0),
         rooms: live.filter((r) => r.game === g.id).length })),
     });
@@ -358,4 +360,4 @@ async function startDb() {
   }
 }
 startDb();
-server.listen(PORT, () => console.log(`Retro Port Lab — Vectrex online on :${PORT}`));
+server.listen(PORT, () => console.log(`Retro Port Lab — Vectrex online on :${PORT}${LOCK_ROOM ? `, everyone locked in room '${LOCK_ROOM}'` : ''}`));
