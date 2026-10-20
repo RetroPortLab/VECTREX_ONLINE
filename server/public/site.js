@@ -16,7 +16,7 @@ const ME = { user: null, ready: null };
   const on = (p) => (here === p || (p !== '/' && here.startsWith(p)) ? ' class="on"' : '');
   const nav = document.createElement('nav');
   nav.className = 'site-nav';
-  nav.innerHTML = `<a class="brand" href="/">Retro Port <span>Lab</span></a>
+  nav.innerHTML = `<a class="brand" href="/">vectrex <span>netlink</span></a>
     <div class="links"><a href="/"${here === '/' ? ' class="on"' : ''}>Games</a><a href="/play"${on('/play')}>Play</a><a href="/watch"${on('/watch')}>Watch</a></div>
     <div class="who"><a class="patreon" href="${PATREON}" target="_blank" rel="noopener">♥ Patreon</a><span id="whoami"></span></div>`;
   document.body.prepend(nav);
