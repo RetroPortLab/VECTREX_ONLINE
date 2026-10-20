@@ -1,7 +1,7 @@
 // The games the site knows. To add one, write games/<id>.js like vecstrike.js or linktest.js and
 // list it here (GAMES.md in the repo walks through the console, bridge and server sides).
 
-const list = [require('./vecstrike'), require('./lightcycles')];
+const list = [require('./vecstrike'), require('./lightcycles'), require('./asteroids')];
 
 const byId = new Map(list.map((g) => [g.id, g]));
 const byBridgeName = new Map();

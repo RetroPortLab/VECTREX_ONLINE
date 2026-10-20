@@ -273,6 +273,40 @@
     if (cv.evlast === null) for (const e of m.ev || []) cv.evlast = e[0];     // the first message: only learn where the count is
     if (cv.evlast === null) cv.evlast = 0;
   }
+  // CO-OP ASTEROIDS: {t:"ast"} every server tick (60 ms): every ship, rock, bullet and the saucer, and the last events.
+  const rv = { ships: [], rocks: [], bul: [], ufo: null, st: 0, cd: 0, wave: 0, lives: 0, score: 0, tick: 60, at: 0, evlast: null, fx: [] };
+  const ROCK_SHAPE = [[100, 78, 96, 82, 100, 74, 94, 80, 98, 76], [88, 100, 74, 94, 86, 100, 72, 96, 84, 90],
+    [96, 72, 100, 84, 70, 98, 88, 100, 76, 92], [82, 100, 90, 70, 96, 86, 100, 74, 92, 80]];
+  const ROCK_R = [5, 10, 20];
+  function onAst(m) {
+    if (m.room !== room) return;
+    const now = performance.now();
+    if (m.full) rv.evlast = null;
+    Object.assign(rv, { ships: m.ships || [], rocks: m.rocks || [], bul: m.bul || [], ufo: m.ufo || null, st: m.st, cd: m.cd, wave: m.wave,
+      lives: m.lives, score: m.score, tick: m.tick_ms || 60, at: now });
+    for (const e of m.ev || []) {
+      const [eid, kind, x, y, a] = e;
+      if (rv.evlast === null) continue;
+      if (eid === rv.evlast || ((eid - rv.evlast) & 255) >= 128) continue;
+      rv.evlast = eid;
+      const burst = (n, big, c) => {
+        for (let i = 0; i < n; i++) {
+          const ang = Math.random() * Math.PI * 2, v = 15 + Math.random() * (big ? 90 : 50);
+          rv.fx.push({ k: 's', x: x - 128, y: y - 128, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, t0: now, life: 400 + Math.random() * 500, c });
+        }
+      };
+      if (kind === 1) burst(a === 0 ? 5 : a === 1 ? 8 : 12, a === 2, '#e8fbff');
+      else if (kind === 2) { burst(16, true, hue(a)); rv.fx.push({ k: 'r', x: x - 128, y: y - 128, t0: now, life: 450, c: hue(a) }); addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} was hit` }); }
+      else if (kind === 3) addEvent({ room, ts: Date.now(), msg: `wave ${a}` });
+      else if (kind === 4) addEvent({ room, ts: Date.now(), level: 'warn', msg: `out of lives at wave ${a}` });
+      else if (kind === 5) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} joined` });
+      else if (kind === 6) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} left` });
+      else if (kind === 7) addEvent({ room, ts: Date.now(), msg: a === 2 ? 'small saucer incoming' : 'saucer incoming' });
+      else if (kind === 8) burst(14, true, '#ffcf6e');
+      else if (kind === 9) addEvent({ room, ts: Date.now(), msg: 'extra life' });
+    }
+    if (rv.evlast === null) { rv.evlast = 0; for (const e of m.ev || []) rv.evlast = e[0]; }
+  }
   async function bots(delta) {
     try { await fetch(`/api/bots?room=${encodeURIComponent(room)}&add=${delta}`, { method: 'POST' }); } catch { /* next stats tells */ }
   }
@@ -297,6 +331,7 @@
       const m = JSON.parse(e.data);
       if (m.t === 'state') onState(m);
       else if (m.t === 'ssnap') onSnap(m);
+      else if (m.t === 'ast') onAst(m);
       else if (m.t === 'sev') onSev(m);
       else if (m.t === 'cyc') onCyc(m);
       else if (m.t === 'sroster') { if (m.room === room) onRoster(m.players); }
@@ -340,27 +375,32 @@
     for (const r of rs) {
       const b = document.createElement('button');
       b.className = 'chip' + (r.name === room ? ' on' : '');
-      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : `${r.name} <small>${r.players.length}/2</small>`;
+      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : r.type === 'rocks' ? `${r.name} <small>${r.players.length}/8 ☄</small>` : `${r.name} <small>${r.players.length}/2</small>`;
       b.onclick = () => watch(r.name);
       $('rooms').appendChild(b);
     }
     const cur = rs.find((r) => r.name === room);
     const players = cur ? cur.players : [];
-    mode = cur && (cur.type === 'strike' || cur.type === 'cycles') ? cur.type : 'netlink';
+    mode = cur && (cur.type === 'strike' || cur.type === 'cycles' || cur.type === 'rocks') ? cur.type : 'netlink';
     $('howGame').innerHTML = mode === 'strike'
       ? 'Build <b>VEC STRIKE</b> onto the cart (<b>netstrike</b> in WSL), start it from the multicart menu, plug in its USB.'
       : mode === 'cycles'
         ? 'Build <b>LIGHT CYCLES</b> onto the cart (<b>netcycles</b> in WSL), start it from the multicart menu, plug in its USB.'
+        : mode === 'rocks'
+          ? 'Build <b>CO-OP ASTEROIDS</b> onto the cart (<b>netrocks</b> in WSL), start it from the multicart menu, plug in its USB.'
         : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
     $('howSim').innerHTML = mode === 'strike'
       ? 'Or run <b>VectrexBridge</b> with this room. Alone? Add bots above: they fly by the same rules.'
       : mode === 'cycles'
         ? 'Or run <b>VectrexBridge</b> with this room. Alone? The server adds bots to race.'
+        : mode === 'rocks'
+          ? 'Or run <b>VectrexBridge</b> with this room. Alone? A bot wingman flies with you.'
         : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
     $('legend').style.display = mode === 'netlink' ? '' : 'none';
-    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : '-127 … 127';
+    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : '-127 … 127';
     if (mode === 'strike') return renderStrike(cur);
     if (mode === 'cycles') return renderCycles(cur);
+    if (mode === 'rocks') return renderRocks(cur);
     const bySlot = { 1: players.find((p) => p.slot === 1), 2: players.find((p) => p.slot === 2) };
     $('players').innerHTML = [1, 2].map((s) => card(s, bySlot[s])).join('');
     for (const s of [1, 2]) if (live[s] && bySlot[s]) drawIO(s, live[s]);
@@ -410,6 +450,34 @@
     document.querySelector('.summary div:nth-child(1) dt').textContent = 'Pilots';
     document.querySelector('.summary div:nth-child(2) dt').textContent = 'Bots';
     document.querySelector('.summary div:nth-child(3) dt').textContent = 'Ship updates / s';
+    $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
+    drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
+  }
+
+  function renderRocks(r) {
+    for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = p.bot; }
+    const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
+    const stateName = ['waiting for pilots', 'next wave', 'flying', 'out of lives'][r.state] || '';
+    const rows = r.players.map((p, i) => {
+      const link = p.bot ? '<span class="tagb">BOT</span>'
+        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+      const state = !p.inGame ? 'title screen' : p.alive ? 'flying' : 'waiting to respawn';
+      return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.score ? 'lead' : ''}">
+        <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
+        <td class="num">${p.score}</td><td class="num">${p.rocks}</td><td class="num">${p.deaths}</td><td>${link}</td><td style="color:var(--dim)">${state}</td></tr>`;
+    }).join('');
+    $('players').innerHTML = `<section class="panel strike">
+      <div class="bar"><span class="title">co-op asteroids</span><span class="round">${stateName} · wave ${r.wave || 0} · ${r.lives || 0} lives · team ${r.score || 0}</span>
+        <span class="bots">bots ${nb} ${botAdmin ? '<button onclick="vsBots(-1)" title="remove a bot">−</button><button onclick="vsBots(1)" title="add a bot">+</button>' : ''}</span></div>
+      <div class="board-wrap"><table class="board"><thead><tr><th>#</th><th>Pilot</th><th class="num">Score</th><th class="num">Rocks</th><th class="num">Deaths</th><th>Link</th><th>Now</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start a console in this room.</td></tr>'}</tbody></table></div></section>`;
+    $('e2e').innerHTML = `${humans.length} <small>consoles</small>`;
+    $('e2eFrames').innerHTML = `${nb} <small>bots</small>`;
+    $('relayed').textContent = humans.reduce((n, p) => n + (p.inHz || 0), 0) || '–';
+    $('linkNote').textContent = humans.length ? 'RTT of each console to the relay' : 'no consoles yet';
+    document.querySelector('.summary div:nth-child(1) dt').textContent = 'Pilots';
+    document.querySelector('.summary div:nth-child(2) dt').textContent = 'Bots';
+    document.querySelector('.summary div:nth-child(3) dt').textContent = 'Console updates / s';
     $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
     drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
   }
@@ -505,6 +573,7 @@
     sctx.lineCap = sctx.lineJoin = 'round';
     if (mode === 'strike') { drawArena(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     if (mode === 'cycles') { drawCycles(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
+    if (mode === 'rocks') { drawRocks(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     for (const slot of [1, 2]) {
       const p = live[slot];
       if (!p) continue;
@@ -596,6 +665,78 @@
       sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center';
       sctx.fillText('the arena is empty', w / 2, h / 2); sctx.textAlign = 'start';
     }
+  }
+
+  function drawRocks(sx, sy, k, d, now, w, h) {
+    const fr = Math.min(1.5, (now - rv.at) / Math.max(30, rv.tick));            // ticks since the snapshot
+    const pos = (p, v) => ((p + v / 8 * fr) % 256 + 256) % 256 - 128;
+    sctx.strokeStyle = '#9ff7ff40'; sctx.lineWidth = 1.5 * d; sctx.shadowBlur = 0;
+    shape(sctx, [[sx(-128), sy(-128)], [sx(127), sy(-128)], [sx(127), sy(127)], [sx(-128), sy(127)]], true);
+    sctx.lineCap = sctx.lineJoin = 'round';
+    const copies = (cx, cy, r, fn) => {                                       // again at the other side when across an edge
+      for (const oy of [-256, 0, 256]) for (const ox of [-256, 0, 256]) {
+        const X = cx + ox, Y = cy + oy;
+        if (X < -128 - r || X > 127 + r || Y < -128 - r || Y > 127 + r) continue;
+        fn(X, Y);
+      }
+    };
+    sctx.shadowColor = '#e8fbff'; sctx.shadowBlur = 6 * d; sctx.strokeStyle = '#e8fbffcc'; sctx.lineWidth = 1.6 * d;
+    for (const [x, y, kind, vx, vy] of rv.rocks) {
+      const size = Math.min(2, (kind >> 2) & 3), shape4 = kind & 3, r = ROCK_R[size];
+      copies(pos(x, vx), pos(y, vy), r, (X, Y) => {
+        const pts = [];
+        for (let i = 0; i < 10; i++) { const a = i * Math.PI * 2 / 10, rr = r * ROCK_SHAPE[shape4][i] / 100; pts.push([sx(X + rr * Math.sin(a)), sy(Y + rr * Math.cos(a))]); }
+        shape(sctx, pts, true);
+      });
+    }
+    sctx.fillStyle = '#fff'; sctx.shadowBlur = 8 * d;
+    for (const [x, y, vx, vy] of rv.bul) copies(pos(x, vx), pos(y, vy), 2, (X, Y) => { sctx.beginPath(); sctx.arc(sx(X), sy(Y), 1.6 * d, 0, Math.PI * 2); sctx.fill(); });
+    if (rv.ufo) {
+      const [x, y, vx, vy, kind] = rv.ufo, q = kind === 2 ? 1 : 2;
+      const ux = ((x + vx / 8 * fr)) - 128, uy = pos(y, vy);
+      sctx.strokeStyle = '#ffcf6e'; sctx.shadowColor = '#ffcf6e';
+      copies(ux, uy, 10, (X, Y) => {
+        shape(sctx, [[-4, 0], [-2, -2], [2, -2], [4, 0], [2, 1], [-2, 1], [-4, 0], [4, 0]].map(([a, b]) => [sx(X + a * q), sy(Y + b * q)]));
+        shape(sctx, [[-1, 1], [-1, 2], [1, 2], [1, 1]].map(([a, b]) => [sx(X + a * q), sy(Y + b * q)]));
+      });
+    }
+    sctx.font = `${10 * d}px IBM Plex Mono, monospace`;
+    for (const [id, x, y, ang, fl, vx, vy] of rv.ships) {
+      const c = hue(id), cx = pos(x, vx), cy = pos(y, vy), s = Math.sin(ang * Math.PI / 128), co = Math.cos(ang * Math.PI / 128);
+      if ((fl & 4) && Math.floor(now / 120) % 2) continue;
+      sctx.strokeStyle = c; sctx.shadowColor = c; sctx.shadowBlur = 12 * d; sctx.lineWidth = 2 * d;
+      copies(cx, cy, 10, (X, Y) => {
+        const pt = ([f, sd]) => [sx(X + f * s + sd * co), sy(Y + f * co - sd * s)];
+        shape(sctx, [[9, 0], [-6, -5], [-3, 0], [-6, 5]].map(pt), true);
+        if ((fl & 2) && Math.floor(now / 60) % 2) shape(sctx, [[-3, -2], [-10, 0], [-3, 2]].map(pt));
+      });
+      sctx.shadowBlur = 0; sctx.fillStyle = c;
+      sctx.fillText(nameOf(id) + (sv.bots[id] ? ' ·bot' : ''), sx(cx) + 12 * d, sy(cy) - 10 * d);
+    }
+    rv.fx = rv.fx.filter((f) => now - f.t0 < f.life);
+    for (const f of rv.fx) {
+      const t = (now - f.t0) / 1000, left = 1 - (now - f.t0) / f.life;
+      sctx.strokeStyle = f.c; sctx.shadowColor = f.c; sctx.shadowBlur = 8 * d; sctx.globalAlpha = Math.max(0, left); sctx.lineWidth = 1.5 * d;
+      if (f.k === 's') {
+        const x = f.x + f.vx * t * (1 - t / 2), y = f.y + f.vy * t * (1 - t / 2);
+        shape(sctx, [[sx(x), sy(y)], [sx(x - f.vx * 0.04), sy(y - f.vy * 0.04)]]);
+      } else { sctx.beginPath(); sctx.arc(sx(f.x), sy(f.y), (3 + t * 60) * k, 0, Math.PI * 2); sctx.stroke(); }
+    }
+    sctx.globalAlpha = 1; sctx.shadowBlur = 0; sctx.textAlign = 'center';
+    sctx.fillStyle = '#e8fbff'; sctx.font = `600 ${11 * d}px IBM Plex Mono, monospace`;
+    sctx.textAlign = 'start'; sctx.fillText(String(rv.score), 10 * d, 18 * d);
+    sctx.textAlign = 'end'; sctx.fillText(`WAVE ${rv.wave}`, w - 10 * d, 18 * d);
+    sctx.textAlign = 'center';
+    if (rv.st === 1) {
+      sctx.font = `600 ${26 * d}px IBM Plex Mono, monospace`; sctx.fillText(`WAVE ${rv.wave}`, w / 2, h / 2);
+    } else if (rv.st === 3) {
+      sctx.fillStyle = '#ffcf6e'; sctx.font = `600 ${22 * d}px IBM Plex Mono, monospace`; sctx.shadowColor = '#ffcf6e'; sctx.shadowBlur = 16 * d;
+      sctx.fillText('GAME OVER', w / 2, h / 2); sctx.shadowBlur = 0;
+    } else if (rv.st === 0 && !rv.ships.length) {
+      sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`;
+      sctx.fillText('waiting for pilots in room "' + room + '"', w / 2, h / 2);
+    }
+    sctx.textAlign = 'start'; sctx.shadowBlur = 0;
   }
 
   function drawCycles(sx, sy, k, d, now, w, h) {

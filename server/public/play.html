@@ -37,7 +37,7 @@
     <div class="panel">
       <h2 style="margin-top:0">What you need</h2>
       <ol class="steps">
-        <li>A Vectrex with the UVMC2 cartridge, running <a href="/games/vecstrike">VEC STRIKE</a>, <a href="/games/lightcycles">LIGHT CYCLES</a> or the <a href="/games/linktest">Link Test</a>, built with the USB monitor on.</li>
+        <li>A Vectrex with the UVMC2 cartridge, running <a href="/games/vecstrike">VEC STRIKE</a>, <a href="/games/lightcycles">LIGHT CYCLES</a>, <a href="/games/asteroids">CO-OP ASTEROIDS</a> or the <a href="/games/linktest">Link Test</a>, built with the USB monitor on.</li>
         <li>A USB cable from the cartridge to this computer.</li>
         <li>Chrome, Edge or Opera on a desktop. When you press Connect, pick the cartridge in the list.</li>
         <li>The cartridge shows up as two ports. If it doesn't answer, press <b>Choose port…</b> and pick the other one.</li>
@@ -129,8 +129,8 @@
 
   // ---- the status ----
   const kv = (rows) => rows.map(([k, v, c]) => `<dt>${esc(k)}</dt><dd class="${c || ''}">${esc(v)}</dd>`).join('');
-  const GAME = { strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', netlink: 'Link Test' };
-  const ROOMY = { strike: 1, cycles: 1 };
+  const GAME = { strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', netlink: 'Link Test' };
+  const ROOMY = { strike: 1, cycles: 1, rocks: 1 };
   function show(s) {
     const ok = s.cart === 'ok';
     $('title').textContent = s.game ? `${GAME[s.game]} · room ${s.room || '…'}` : 'Connecting…';
@@ -141,14 +141,14 @@
       ['USB request', s.usb_ms ? s.usb_ms.toFixed(1) + ' ms' : '–', s.usb_ms > 15 ? 'warn' : ''], ['Polls', s.poll_hz + ' /s'], ['Game frames', s.game_hz + ' /s', s.game_hz && s.game_hz < 40 ? 'warn' : '']]);
     $('netKv').innerHTML = kv([
       ['Relay', s.net, s.net === 'connected' ? 'good' : s.net.startsWith('error') ? 'bad' : ''], ['Playing as', s.account ? '@' + s.account : 'guest'],
-      [s.game === 'strike' ? 'Pilots here' : s.game === 'cycles' ? 'Riders here' : 'Consoles here', s.peers], ['Round trip', s.rtt == null ? '–' : s.rtt + ' ms'],
-      ['Sent', s.sent_hz + ' /s'], ['Received', s.rx_hz + ' /s'], ['Your score', s.score ? (s.game === 'cycles' ? `${s.score[0]} wins · ${s.score[1]} crashes` : `${s.score[0]} kills · ${s.score[1]} deaths`) : '–']]);
+      [s.game === 'strike' ? 'Pilots here' : s.game === 'cycles' ? 'Riders here' : s.game === 'rocks' ? 'Ships here' : 'Consoles here', s.peers], ['Round trip', s.rtt == null ? '–' : s.rtt + ' ms'],
+      ['Sent', s.sent_hz + ' /s'], ['Received', s.rx_hz + ' /s'], ['Your score', s.score ? (s.game === 'cycles' ? `${s.score[0]} wins · ${s.score[1]} crashes` : s.game === 'rocks' ? `${s.score[0] * 10} points · ${s.score[1]} rocks` : `${s.score[0]} kills · ${s.score[1]} deaths`) : '–']]);
     $('scores').hidden = !(ROOMY[s.game] && s.roster.length);
     if (ROOMY[s.game] && s.roster.length) {
-      const cyc = s.game === 'cycles';
-      const rows = [...s.roster].sort((a, b) => b[2] - a[2] || a[3] - b[3]);
-      $('board').innerHTML = `<tr><th>#</th><th>${cyc ? 'Rider' : 'Pilot'}</th><th>${cyc ? 'Wins' : 'Kills'}</th><th>${cyc ? 'Crashes' : 'Deaths'}</th></tr>` + rows.map((p, i) =>
-        `<tr class="${p[0] === s.slot ? 'me' : ''}"><td>${i + 1}</td><td>${esc(String(p[4]).trim())}${p[1] & 8 ? ' <span class="note">BOT</span>' : ''}</td><td class="big">${p[2]}</td><td>${p[3]}</td></tr>`).join('');
+      const cyc = s.game === 'cycles', rk = s.game === 'rocks';
+      const rows = [...s.roster].sort((a, b) => b[2] - a[2] || (rk ? b[3] - a[3] : a[3] - b[3]));
+      $('board').innerHTML = `<tr><th>#</th><th>${cyc ? 'Rider' : 'Pilot'}</th><th>${cyc ? 'Wins' : rk ? 'Score' : 'Kills'}</th><th>${cyc ? 'Crashes' : rk ? 'Rocks' : 'Deaths'}</th></tr>` + rows.map((p, i) =>
+        `<tr class="${p[0] === s.slot ? 'me' : ''}"><td>${i + 1}</td><td>${esc(String(p[4]).trim())}${p[1] & 8 ? ' <span class="note">BOT</span>' : ''}</td><td class="big">${rk ? p[2] * 10 : p[2]}</td><td>${p[3]}</td></tr>`).join('');
     }
   }
   window.addEventListener('beforeunload', () => { if (bridge) bridge.stop(); });

@@ -12,7 +12,7 @@
   'use strict';
   const VID = 0x2E8A, PID = 0x10DB;
   const SRAM0 = 0x20000000, SRAM1 = 0x20082000;
-  const MAGIC_STRIKE = 0x4B545356, MAGIC_NET = 0x54454E56, MAGIC_CYCLES = 0x43594356;   // "VSTK", "VNET", "VCYC"
+  const MAGIC_STRIKE = 0x4B545356, MAGIC_NET = 0x54454E56, MAGIC_CYCLES = 0x43594356, MAGIC_ROCKS = 0x54534156;   // "VSTK", "VNET", "VCYC", "VAST"
   const ST_EVERY = 40;                                           // VEC STRIKE: the ship to the relay 25 times a second
   const CY_EVERY = 100;                                          // LIGHT CYCLES: a heartbeat with the turn counter (turns go out at once)
 
@@ -155,6 +155,40 @@
     out.push([CB.OFF_COMMIT, new Pack(8).u32(commitSeq).u8(buf).skip(3).done()]);
     return out;
   }
+  // ---- CO-OP ASTEROIDS' mailbox (vectrex/asteroids/src/vast_box.h, bridge/rockbox.py) ---------------
+  const RB = {
+    SIZE: 816, OFF_LOCAL: 8, LOCAL_END: 40, OFF_LINK: 40, OFF_COMMIT: 168, OFF_SNAP: 176, SNAP_SIZE: 320,
+    SNAP_SHIP: 24, SNAP_ROCK: 80, SNAP_BUL: 200, SNAP_UFO: 264, SNAP_EVT: 270, MAX_SHIP: 8, MAX_ROCK: 24, MAX_BUL: 16, MAX_EVT: 8, MAX_ROSTER: 8,
+  };
+  function decodeRocksLocal(raw) {
+    const v = dv(raw), o = RB.OFF_LOCAL;
+    return { seq: v.getUint32(o, true), f: v.getUint32(o + 4, true), fl: v.getUint8(o + 8), in: v.getUint8(o + 9),
+      a: v.getUint8(o + 10), sh: v.getUint8(o + 11), hy: v.getUint8(o + 12) };
+  }
+  function rockSnapshotWrites(buf, commitSeq, snap, me) {
+    const base = RB.OFF_SNAP + buf * RB.SNAP_SIZE;
+    const ships = (snap.ships || []).slice(0, RB.MAX_SHIP), rocks = (snap.rocks || []).slice(0, RB.MAX_ROCK), buls = (snap.bul || []).slice(0, RB.MAX_BUL);
+    const y = snap.you || {};
+    const head = new Pack(24)
+      .u32(snap.seq || 0).u8(me).u8(snap.st || 0).u8(Math.min(255, snap.cd || 0)).u8(Math.min(255, snap.wave || 0))
+      .u8(Math.min(255, snap.lives || 0)).u8(ships.length).u8(rocks.length).u8(buls.length)
+      .u8((y.alive ? 1 : 0) | (y.inRun ? 2 : 0)).u8(Math.min(255, snap.tick_ms || 60)).u8(Math.min(255, snap.np || 0)).skip(1)
+      .u32(snap.score || 0).skip(4);
+    const out = [[base, head.done()]];
+    if (ships.length) { const p = new Pack(7 * ships.length); for (const s of ships) p.u8(s[0]).u8(s[1]).u8(s[2]).u8(s[3]).u8(s[4]).i8(s[5]).i8(s[6]); out.push([base + RB.SNAP_SHIP, p.done()]); }
+    if (rocks.length) { const p = new Pack(5 * rocks.length); for (const r of rocks) p.u8(r[0]).u8(r[1]).u8(r[2]).i8(r[3]).i8(r[4]); out.push([base + RB.SNAP_ROCK, p.done()]); }
+    if (buls.length) { const p = new Pack(4 * buls.length); for (const b of buls) p.u8(b[0]).u8(b[1]).i8(b[2]).i8(b[3]); out.push([base + RB.SNAP_BUL, p.done()]); }
+    const u = snap.ufo, up = new Pack(6);
+    if (u) up.u8(u[0]).u8(u[1]).i8(u[2]).i8(u[3]).u8(u[4]); else up.skip(5);
+    up.o = 6;
+    out.push([base + RB.SNAP_UFO, up.done()]);
+    const ev = new Pack(6 * RB.MAX_EVT);
+    for (const e of (snap.ev || []).slice(-RB.MAX_EVT)) for (let i = 0; i < 6; i++) ev.u8(e[i]);
+    ev.o = 6 * RB.MAX_EVT;
+    out.push([base + RB.SNAP_EVT, ev.done()]);
+    out.push([RB.OFF_COMMIT, new Pack(8).u32(commitSeq).u8(buf).skip(3).done()]);
+    return out;
+  }
   function chunks(writes, limit = 64) {
     const out = [];
     for (const [off, data] of writes) for (let i = 0; i < data.length; i += limit) out.push([off + i, data.subarray(i, i + limit)]);
@@ -287,6 +321,7 @@
         const m = dv(h).getUint32(0, true);
         if (m === MAGIC_STRIKE && headerOk(h, m, SB.SIZE)) return 'strike';
         if (m === MAGIC_CYCLES && headerOk(h, m, CB.SIZE)) return 'cycles';
+        if (m === MAGIC_ROCKS && headerOk(h, m, RB.SIZE)) return 'rocks';
         if (m === MAGIC_NET && headerOk(h, m, 48)) return 'netlink';
       } catch (e) { if (this.gone) throw e; }
       return null;
@@ -304,7 +339,7 @@
         how = 'found by scanning RAM';
       }
       this.game = game;
-      this.log(`cart: ${{ strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES' }[game] || 'link test'} mailbox at ${this.addr.toString(16)} (${how})`);
+      this.log(`cart: ${{ strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS' }[game] || 'link test'} mailbox at ${this.addr.toString(16)} (${how})`);
     }
     async scan() {
       // One read at a time, like the monitor's own tools do (the cart's answers can overrun if
@@ -318,7 +353,7 @@
         const v = dv(chunk);
         for (let i = 0; i + 4 <= 256; i += 4) {
           const m = v.getUint32(i, true);
-          if (m !== MAGIC_STRIKE && m !== MAGIC_NET && m !== MAGIC_CYCLES) continue;
+          if (m !== MAGIC_STRIKE && m !== MAGIC_NET && m !== MAGIC_CYCLES && m !== MAGIC_ROCKS) continue;
           n++;
           const a = base + i;
           const game = await this.check(a);
@@ -334,7 +369,7 @@
         if (((base - SRAM0) >> 8) % 32 === 0) { this.onScan && this.onScan((base - SRAM0) / (SRAM1 - SRAM0)); await hop(); }
       }
       this.log(`cart: scanned ${(SRAM1 - SRAM0) >> 10} KB in ${((performance.now() - t0) / 1000).toFixed(1)} s, ${n} candidate(s)`);
-      throw new CartError('no live mailbox in RAM: is VEC STRIKE, LIGHT CYCLES (or the link test) the game running on the cart?');
+      throw new CartError('no live mailbox in RAM: is VEC STRIKE, LIGHT CYCLES, CO-OP ASTEROIDS (or the link test) the game running on the cart?');
     }
 
     // ---- what the bridge uses ----
@@ -351,6 +386,14 @@
         const raw = await this.read(this.addr, CB.LOCAL_END);
         if (!headerOk(raw, MAGIC_CYCLES, CB.SIZE)) throw new CartError('the mailbox is gone (the game restarted or another one is running)');
         const s = decodeCyclesLocal(raw);
+        if (s.seq & 1) return null;
+        this.stopped = false;
+        return s;
+      }
+      if (this.game === 'rocks') {
+        const raw = await this.read(this.addr, RB.LOCAL_END);
+        if (!headerOk(raw, MAGIC_ROCKS, RB.SIZE)) throw new CartError('the mailbox is gone (the game restarted or another one is running)');
+        const s = decodeRocksLocal(raw);
         if (s.seq & 1) return null;
         this.stopped = false;
         return s;
@@ -449,7 +492,7 @@
       if (trails.size) p.trails = new Map();
       const link = (this.linkDirty || t0 - this.lastLink > 1000) ? this.link.slice() : null;
       this.linkDirty = false;
-      if (game === 'strike' || game === 'cycles') {
+      if (game === 'strike' || game === 'cycles' || game === 'rocks') {
         const writes = [];
         if (link) { this.linkSeq++; writes.push([SB.OFF_LINK, encodeLink(link[0], link[1], link[2], this.linkSeq)]); this.lastLink = t0; }
         if (roster) writes.push(...rosterWrites(...roster));
@@ -457,7 +500,7 @@
         if (snap) {
           const buf = 1 - this.cur;                          // the one the game is not reading, then the commit
           this.commit++;
-          writes.push(...(game === 'cycles' ? cycleSnapshotWrites : snapshotWrites)(buf, this.commit, snap[0], snap[1]));
+          writes.push(...({ cycles: cycleSnapshotWrites, rocks: rockSnapshotWrites }[game] || snapshotWrites)(buf, this.commit, snap[0], snap[1]));
           this.cur = buf;
         }
         if (writes.length) await cart.writeBox(writes);
@@ -481,9 +524,9 @@
     connectNet(game) {
       if (this.stopped) return;
       this.set({ net: 'connecting' });
-      if (game === 'strike' || game === 'cycles') this.setLink(undefined, undefined, SB.VL_RELAY);
+      if (game === 'strike' || game === 'cycles' || game === 'rocks') this.setLink(undefined, undefined, SB.VL_RELAY);
       this.log(`net: connecting to ${this.wsUrl}`);
-      const room = this.room || (game === 'strike' ? 'arena' : game === 'cycles' ? 'grid' : 'test');
+      const room = this.room || (game === 'strike' ? 'arena' : game === 'cycles' ? 'grid' : game === 'rocks' ? 'field' : 'test');
       const ws = new WebSocket(this.wsUrl);
       this.ws = ws; this.game = game;
       ws.onopen = () => {
@@ -529,6 +572,13 @@
           this.wsend({ t: 'cy', f: s.f, fl: s.fl, n: s.n, c: turns });
           this.cnt.sent++;
         }
+      } else if (game === 'rocks') {
+        const key = `${s.fl & 8}.${s.in}.${s.a}.${s.sh}.${s.hy}`;
+        if (key !== this.lastKey || now - this.lastCy >= CY_EVERY) {
+          this.lastKey = key; this.lastCy = now;
+          this.wsend({ t: 'as', f: s.f, fl: s.fl, in: s.in, a: s.a, sh: s.sh, hy: s.hy });
+          this.cnt.sent++;
+        }
       } else {
         const { seq, ...rest } = s;
         this.wsend({ t: 'state', ...rest });
@@ -537,7 +587,7 @@
     }
 
     onMessage(m, game) {
-      const cycles = game === 'cycles', strike = game === 'strike' || cycles;     // strike: the games with a room, roster and snapshots
+      const cycles = game === 'cycles', rocks = game === 'rocks', strike = game === 'strike' || cycles || rocks;     // strike: the games with a room, roster and snapshots
       switch (m.t) {
         case 'ping': this.wsend({ t: 'pong', id: m.id }); break;
         case 'rtt': this.status.rtt = toI(m.ms); this.setLink(this.status.rtt); break;
@@ -545,6 +595,12 @@
         case 'snap': {
           if (!strike) break;
           this.cnt.rx++;
+          if (rocks) {
+            this.pending.snap = [m, this.myId];
+            this.status.pilots = this.status.peers = m.np || 0;
+            this.setLink(undefined, Math.min(255, m.np || 0));
+            break;
+          }
           if (cycles) {
             for (const [cid, ver, flat] of (m.tr || [])) this.pending.trails.set(cid, [ver, flat]);
             this.pending.snap = [m, this.myId];
@@ -563,7 +619,7 @@
         case 'roster': {
           if (!strike) break;
           const players = m.players || [];
-          this.pending.roster = [m.seq || 0, cycles ? 0 : (m.rk || 15), players];
+          this.pending.roster = [m.seq || 0, cycles || rocks ? 0 : (m.rk || 15), players.slice(0, rocks ? RB.MAX_ROSTER : 20)];
           const mine = players.find((p) => p[0] === this.myId);
           this.status.roster = players; this.status.rk = m.rk || 15;
           if (mine) this.status.score = [mine[2], mine[3]];
@@ -574,7 +630,7 @@
             this.myId = toI(m.id);
             this.status.slot = this.myId; this.status.peers = toI(m.peers); this.status.account = m.account || null;
             this.setLink(undefined, toI(m.peers), SB.VL_ROOM);
-            this.log(`net: in ${cycles ? 'LIGHT CYCLES' : 'VEC STRIKE'} room '${m.room}' as P${this.myId} (${m.peers} ${cycles ? 'rider' : 'pilot'}(s) here)${m.account ? ` as ${m.account}` : ' as a guest'}`);
+            this.log(`net: in ${cycles ? 'LIGHT CYCLES' : rocks ? 'CO-OP ASTEROIDS' : 'VEC STRIKE'} room '${m.room}' as P${this.myId} (${m.peers} ${cycles ? 'rider' : rocks ? 'ship' : 'pilot'}(s) here)${m.account ? ` as ${m.account}` : ' as a guest'}`);
           } else {
             this.status.slot = toI(m.slot); this.status.peers = toI(m.peers);
             this.setLink(undefined, toI(m.peers), toI(m.slot));
@@ -608,5 +664,5 @@
   }
 
   root.WebBridge = WebBridge;
-  root.WebBridgeParts = { Cart, CartError, VID, PID, SB, CB, rosterWrites, snapshotWrites, cycleSnapshotWrites, trailWrites, newCmds, decodeCyclesLocal, encodeLink, encodeRemote, chunks, decodeStrikeLocal, decodeNetLocal, name8 };
+  root.WebBridgeParts = { Cart, CartError, VID, PID, SB, CB, RB, rockSnapshotWrites, decodeRocksLocal, rosterWrites, snapshotWrites, cycleSnapshotWrites, trailWrites, newCmds, decodeCyclesLocal, encodeLink, encodeRemote, chunks, decodeStrikeLocal, decodeNetLocal, name8 };
 })(typeof window !== 'undefined' ? window : globalThis);
