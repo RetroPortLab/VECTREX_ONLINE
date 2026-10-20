@@ -354,7 +354,7 @@
     const win = r.win ? `<span class="win">${esc(nameOf(r.win))} wins the round</span>` : `<span class="round">first to ${r.rk || 15} kills</span>`;
     $('players').innerHTML = `<section class="panel strike">
       <div class="bar"><span class="title">vec strike</span>${win}
-        <span class="bots">bots ${nb} <button onclick="vsBots(-1)" title="remove a bot">−</button><button onclick="vsBots(1)" title="add a bot">+</button></span></div>
+        <span class="bots">bots ${nb} ${botAdmin ? '<button onclick="vsBots(-1)" title="remove a bot">−</button><button onclick="vsBots(1)" title="add a bot">+</button>' : ''}</span></div>
       <div class="board-wrap"><table class="board"><thead><tr><th>#</th><th>Pilot</th><th class="num">Kills</th><th class="num">Deaths</th><th>Link</th><th>Now</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start a console in this room, or add bots.</td></tr>'}</tbody></table></div></section>`;
     $('e2e').innerHTML = `${humans.length} <small>consoles</small>`;
@@ -392,6 +392,8 @@
         <div class="cartline ${cartOk ? '' : 'warn'}" title="${esc(st.cart || '')}">${esc(cartOk ? (st.fw || 'cart ok') : (st.cart || 'no status yet'))}</div></div>
     </section>`;
   }
+  let botAdmin = false;                       // only bot admins get the + and − buttons
+  fetch('/api/me').then((r) => r.json()).then((m) => { botAdmin = !!m.botAdmin; }).catch(() => {});
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function drawIO(slot, s) {
