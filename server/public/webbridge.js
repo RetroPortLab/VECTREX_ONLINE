@@ -299,6 +299,24 @@
       if (h.length !== n * 2) throw new CartError(`read ${addr.toString(16)}: ${h.length / 2} bytes, wanted ${n}`);
       return unhex(h);
     }
+    // one file to the SD card root: `u <size> <name>`, OK, the raw bytes, `DONE <size> <crc32>`
+    async upload(name, data, progress) {
+      if (!/^[A-Za-z0-9_. -]{1,60}$/.test(name) || name.startsWith('.')) throw new CartError(`bad file name ${name}`);
+      const a = await this.ask(`u ${data.length} ${name}`, 5000);
+      if (a !== 'OK') throw new CartError(`the cart refused ${name}: ${a} (is the SD card in?)`);
+      const done = this.answer(60000 + 20 * data.length / 1024);
+      done.catch(() => {});
+      for (let off = 0; off < data.length; off += 4096) {
+        if (this.gone || !this.writer) throw new CartError('not connected');
+        await this.writer.write(data.subarray(off, off + 4096));
+        progress && progress(Math.min(off + 4096, data.length), data.length);
+      }
+      const got = await done;
+      const want = `DONE ${data.length} ${crc32(data).toString(16).padStart(8, '0')}`;
+      if (got !== want) throw new CartError(`${name}: the cart answered "${got}", expected "${want}"`);
+    }
+    async rebootToMenu() { try { await this.ask('b', 2000); } catch { /* it resets: the port may vanish first */ } }
+
     // [[addr, bytes]] (each up to 64 bytes): one batch, answered in order
     async writeMany(writes) {
       if (!writes.length) return;
@@ -408,6 +426,61 @@
   }
 
   // ---- the bridge ------------------------------------------------------------------------
+  // ---- install / update games: the site's zips -> the cart's SD card ------------------------------
+  const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(d) { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC_T[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+  // the one .um2 inside a game's zip (stored or deflated), read via the central directory
+  async function unzipUm2(buf) {
+    const d = new Uint8Array(buf), v = new DataView(buf);
+    let e = d.length - 22;
+    while (e >= 0 && v.getUint32(e, true) !== 0x06054b50) e--;
+    if (e < 0) throw new CartError('not a zip file');
+    const n = v.getUint16(e + 10, true); let p = v.getUint32(e + 16, true);
+    for (let i = 0; i < n; i++) {
+      if (v.getUint32(p, true) !== 0x02014b50) break;
+      const method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true), usize = v.getUint32(p + 24, true);
+      const nl = v.getUint16(p + 28, true), xl = v.getUint16(p + 30, true), cl = v.getUint16(p + 32, true), lh = v.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(d.subarray(p + 46, p + 46 + nl));
+      p += 46 + nl + xl + cl;
+      if (!/\.um2$/i.test(name) || name.includes('/') || usize > (4 << 20)) continue;
+      const start = lh + 30 + v.getUint16(lh + 26, true) + v.getUint16(lh + 28, true);
+      const raw = d.subarray(start, start + csize);
+      let out;
+      if (method === 0) out = raw;
+      else if (method === 8) out = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+      else throw new CartError(`${name}: unsupported zip method ${method}`);
+      if (out.length !== usize) throw new CartError(`${name}: bad zip entry`);
+      return { name, data: out };
+    }
+    throw new CartError('no .um2 in the zip');
+  }
+
+  // [{id, title, url}] the site offers as downloads, and the files themselves
+  async function gameDownloads(base = '') {
+    const site = await (await fetch(base + '/api/site')).json();
+    return (site.games || []).filter((g) => g.download).map((g) => ({ id: g.id, title: g.title, url: base + '/downloads/' + g.download.file }));
+  }
+  async function fetchGame(g) {
+    const r = await fetch(g.url);
+    if (!r.ok) throw new CartError(`${g.title}: HTTP ${r.status}`);
+    return { title: g.title, ...(await unzipUm2(await r.arrayBuffer())) };
+  }
+  // files: [{title, name, data}]. Opens the port, uploads each (verified by CRC), resets the cart to its menu.
+  async function installGames(port, files, { log = () => {}, progress } = {}) {
+    const cart = new Cart(port, log);
+    await cart.open();
+    try {
+      for (const f of files) {
+        log(`upload: ${f.title} (${f.name}, ${f.data.length.toLocaleString()} bytes)`);
+        await cart.upload(f.name, f.data, progress && ((a, b) => progress(f.title, a, b)));
+        log(`ok: ${f.name} verified on the SD card`);
+      }
+      await cart.rebootToMenu();
+      log('the cart is resetting to the multicart menu: choose the game with the Vectrex controller');
+    } finally { await cart.close(); }
+  }
+
   class WebBridge {
     constructor({ port, room, name, wsUrl, log, onStatus, onScan }) {
       this.port = port; this.room = room; this.name = name;
@@ -664,5 +737,6 @@
   }
 
   root.WebBridge = WebBridge;
+  root.WebInstaller = { gameDownloads, fetchGame, installGames, unzipUm2, crc32 };
   root.WebBridgeParts = { Cart, CartError, VID, PID, SB, CB, RB, rockSnapshotWrites, decodeRocksLocal, rosterWrites, snapshotWrites, cycleSnapshotWrites, trailWrites, newCmds, decodeCyclesLocal, encodeLink, encodeRemote, chunks, decodeStrikeLocal, decodeNetLocal, name8 };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -33,6 +33,15 @@
       <p class="note">Everyone in the same room plays together. Leave it empty for the default.</p>
       <div class="row" style="margin-top:14px"><button class="primary" id="go">Connect console</button><button id="pick" title="Open Chrome's list of ports and choose again">Choose port…</button><span id="err" class="err" style="margin:0"></span></div>
       <p class="note" id="remembered"></p>
+      <h2>Games on the cartridge</h2>
+      <p class="note" style="margin-top:0">Send the latest games from this site to the cartridge's SD card over USB. The cartridge must be running a NetLink game (built with the USB monitor).</p>
+      <div class="row"><button id="inst">Install / update games…</button><span id="instErr" class="err" style="margin:0"></span></div>
+      <div id="instBox" hidden>
+        <p class="note" id="instList"></p>
+        <div class="row"><button class="primary" id="instGo">Write to SD card</button><button id="instCancel">Cancel</button></div>
+        <div class="bar" id="instBarBox" hidden><i id="instBar"></i></div>
+        <p class="note" id="instMsg"></p>
+      </div>
     </div>
     <div class="panel">
       <h2 style="margin-top:0">What you need</h2>
@@ -120,6 +129,35 @@
     bridge = new WebBridge({ port, room, name, log: say, onStatus: show,
       onScan: (f) => { $('scanBox').hidden = f >= 1; $('scanBar').style.width = (f * 100).toFixed(0) + '%'; } });
     bridge.start().then(() => { $('title').textContent = 'Disconnected'; });
+  };
+  // ---- install / update games ----
+  let instFiles = null;
+  $('inst').onclick = async () => {
+    $('instErr').textContent = ''; $('instMsg').textContent = '';
+    try {
+      const list = await WebInstaller.gameDownloads();
+      if (!list.length) { $('instErr').textContent = 'The site offers no downloads.'; return; }
+      $('instList').textContent = 'Reading the games ...'; $('instBox').hidden = false; $('instGo').disabled = true;
+      instFiles = [];
+      for (const g of list) instFiles.push(await WebInstaller.fetchGame(g));
+      $('instList').innerHTML = 'This will write these files to the cartridge\'s SD card (files with the same name are replaced), then reset it to the multicart menu:<br>' +
+        instFiles.map((f) => `&bull; ${esc(f.title)} <span class="note">(${esc(f.name)}, ${(f.data.length / 1024).toFixed(0)} KB)</span>`).join('<br>');
+      $('instGo').disabled = false;
+    } catch (e) { $('instBox').hidden = true; $('instErr').textContent = e.message; }
+  };
+  $('instCancel').onclick = () => { $('instBox').hidden = true; instFiles = null; };
+  $('instGo').onclick = async () => {
+    if (!instFiles) return;
+    const files = instFiles; $('instGo').disabled = true; $('instCancel').disabled = true; $('instMsg').textContent = '';
+    try {
+      const port = await pickPort();
+      $('instBarBox').hidden = false;
+      await WebInstaller.installGames(port, files, { log: (s) => { $('instMsg').textContent = s; },
+        progress: (t, a, b) => { $('instBar').style.width = (100 * a / b).toFixed(0) + '%'; $('instMsg').textContent = `${t}: ${(100 * a / b).toFixed(0)}%`; } });
+      $('instMsg').textContent = 'Done. The cartridge is resetting: choose the game in its menu with the Vectrex controller.';
+      instFiles = null;
+    } catch (e) { $('instMsg').textContent = 'Failed: ' + e.message; $('instGo').disabled = false; }
+    $('instCancel').disabled = false; $('instBarBox').hidden = true;
   };
   $('stop').onclick = async () => {
     if (bridge) await bridge.stop();
