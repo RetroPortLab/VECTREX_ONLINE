@@ -15,6 +15,7 @@
 <h2>Live now</h2><div class="panel" id="live"><span class="note">loading…</span></div>
 <h2>Top pilots this week <span id="topgame"></span></h2><div class="panel" id="top"></div>
 </main>
+<script src="/logos.js"></script>
 <script src="/site.js"></script>
 <script>
 
@@ -23,7 +24,7 @@
   await ME.ready;
   if (ME.user) document.getElementById('signup').remove();
   document.getElementById('offline').hidden = s.persistent;
-  document.getElementById('games').innerHTML = s.games.map((g) => `<a class="panel card" href="/games/${g.id}"><h3>${esc(g.title)}</h3><p>${esc(g.tagline)}</p>
+  document.getElementById('games').innerHTML = s.games.map((g) => `<a class="panel card" href="/games/${g.id}">${(window.GAME_LOGOS || {})[g.id] || ''}<h3>${esc(g.title)}</h3><p>${esc(g.tagline)}</p>
     <span class="tag">${esc(g.players)} players</span>${g.live ? `<span class="tag live">${g.live} online</span>` : ''}</a>`).join('');
   document.getElementById('live').innerHTML = s.rooms.length
     ? s.rooms.map((r) => `<div class="row" style="padding:4px 0"><b>${esc(r.name)}</b><span class="tag">${esc(r.title)}</span><span>${r.consoles} console${r.consoles === 1 ? '' : 's'}${r.bots ? ` + ${r.bots} bots` : ''}</span><a href="/watch?room=${encodeURIComponent(r.name)}">watch</a></div>`).join('')
