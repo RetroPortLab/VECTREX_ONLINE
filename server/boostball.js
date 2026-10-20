@@ -186,12 +186,22 @@ class BallRoom {
   setState(s) { this.state = s; this.stateTicks = 0; }
   leagueEligible() { return this.humansOn(0).some((p) => p.userId && p.inMatch) && this.humansOn(1).some((p) => p.userId && p.inMatch); }
 
+  // kick-off spots: new random ones every kick-off, the same for both sides (team B is the point-mirror of team A)
+  newLayout() {
+    const slots = [];
+    for (let tries = 0; slots.length < 3 && tries < 60; tries++) {
+      const dx = 46 + Math.random() * 54, y = 74 + Math.random() * 108;
+      if (slots.every((q) => Math.hypot(q[0] - dx, q[1] - y) >= 30)) slots.push([Math.round(dx), Math.round(y)]);
+    }
+    while (slots.length < 3) slots.push([60, 90 + slots.length * 36]);
+    this.layout = slots;
+  }
+
   spawnSpot(p) {
+    if (!this.layout) this.newLayout();
     const mates = this.team(p.team).filter((q) => q.inMatch).sort((a, b) => a.id - b.id);
-    const i = Math.max(0, mates.indexOf(p)), n = Math.max(1, mates.length);
-    const ys = n === 1 ? [128] : n === 2 ? [100, 156] : [88, 128, 168];
-    const xs = n === 3 ? [-62, -76, -62] : [-66, -66, -66];
-    return [p.team ? C.CX - xs[i] : C.CX + xs[i], ys[i]];
+    const [dx, y] = this.layout[Math.min(2, Math.max(0, mates.indexOf(p)))];
+    return p.team ? [C.CX + dx, 2 * C.CY - y] : [C.CX - dx, y];
   }
 
   enter(p) {                       // a car joins the match (at the start, or later)
@@ -206,6 +216,7 @@ class BallRoom {
   }
 
   kickoff() {
+    this.newLayout();
     for (const p of this.inMatch()) this.placeCar(p);
     const b = this.ball;
     b.x = C.CX; b.y = C.CY; b.vx = b.vy = 0; b.goal = false; b.touches = [];
