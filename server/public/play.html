@@ -123,6 +123,7 @@
     let port;
     try { port = await pickPort(); }
     catch (e) { $('err').textContent = e.name === 'NotFoundError' ? 'No cartridge chosen. Is it plugged in and running a game?' : e.message; return; }
+    LS.set('rpl_active', '1');
     $('setup').hidden = true; $('live').hidden = false; $('log').textContent = '';
     $('watch').href = '/watch?room=' + encodeURIComponent(room || 'arena');
     try { wake = await navigator.wakeLock?.request('screen'); } catch { /* optional */ }
@@ -163,7 +164,7 @@
   $('leave').onclick = () => { if (!bridge) return; if (left) bridge.rejoinGame(); else bridge.leaveGame(); };
   $('stop').onclick = async () => {
     if (bridge) await bridge.stop();
-    bridge = null; try { wake?.release(); } catch { /* ok */ }
+    bridge = null; LS.set('rpl_active', ''); try { wake?.release(); } catch { /* ok */ }
     $('live').hidden = true; $('setup').hidden = false; $('remembered').textContent = 'Disconnected. Press Connect to go again.';
   };
 
@@ -192,6 +193,18 @@
         `<tr class="${p[0] === s.slot ? 'me' : ''}"><td>${i + 1}</td><td>${esc(String(p[4]).trim())}${p[1] & 8 ? ' <span class="note">BOT</span>' : ''}</td><td class="big">${rk ? p[2] * 10 : p[2]}</td><td>${p[3]}</td></tr>`).join('');
     }
   }
+  // coming back to this page while you were connected: pick the console up again (no prompt needed
+  // once Chrome has been given the port)
+  (async () => {
+    if (LS.get('rpl_active') !== '1' || !('serial' in navigator) || !window.isSecureContext) return;
+    await ME.ready;
+    const known = (await navigator.serial.getPorts()).filter((p) => { const i = p.getInfo(); return i.usbVendorId === VID && i.usbProductId === PID; });
+    if (known.length !== 1) return;
+    if (!ME.user && !(LS.get('rpl_name') || '').trim()) return;
+    $('remembered').textContent = 'You were connected: reconnecting to your console ...';
+    if ($('name') && !$('name').value) $('name').value = LS.get('rpl_name') || '';
+    $('go').click();
+  })();
   window.addEventListener('beforeunload', () => { if (bridge) bridge.stop(); });
 })();
 </script>
