@@ -31,7 +31,7 @@
       <h2>2 · Room</h2>
       <input type="text" id="room" maxlength="32" spellcheck="false" autocomplete="off" placeholder="arena">
       <p class="note">Everyone in the same room plays together. Leave it empty for the default.</p>
-      <div class="row" style="margin-top:14px"><button class="primary" id="go">Connect console</button><span id="err" class="err" style="margin:0"></span></div>
+      <div class="row" style="margin-top:14px"><button class="primary" id="go">Connect console</button><button id="pick" title="Open Chrome's list of ports and choose again">Choose port…</button><span id="err" class="err" style="margin:0"></span></div>
       <p class="note" id="remembered"></p>
     </div>
     <div class="panel">
@@ -40,6 +40,7 @@
         <li>A Vectrex with the UVMC2 cartridge, running <a href="/games/vecstrike">VEC STRIKE</a> or the <a href="/games/linktest">Link Test</a>, built with the USB monitor on.</li>
         <li>A USB cable from the cartridge to this computer.</li>
         <li>Chrome, Edge or Opera on a desktop. When you press Connect, pick the cartridge in the list.</li>
+        <li>The cartridge shows up as two ports. If it doesn't answer, press <b>Choose port…</b> and pick the other one.</li>
         <li>Keep this tab open while you play. Close VectrexBridge and the IDE's debugger first: only one program can hold the cart.</li>
       </ol>
     </div>
@@ -71,7 +72,7 @@
     const b = $('nosupport'); b.hidden = false;
     b.textContent = !window.isSecureContext ? 'This page needs https:// to reach your console.'
       : 'This browser can\'t talk to USB devices. Use Chrome, Edge or Opera on a desktop computer, or the VectrexBridge app for Windows.';
-    $('go').disabled = true;
+    $('go').disabled = $('pick').disabled = true;
   }
 
   // ---- who you are ----
@@ -91,11 +92,13 @@
     const filters = [{ usbVendorId: VID, usbProductId: PID }];
     const known = (await navigator.serial.getPorts()).filter((p) => { const i = p.getInfo(); return i.usbVendorId === VID && i.usbProductId === PID; });
     if (known.length === 1 && !pickPort.forceNew) return known[0];
+    pickPort.forceNew = false;
     return navigator.serial.requestPort({ filters });
   }
 
   function say(s) { const el = $('log'); el.textContent += (el.textContent ? '\n' : '') + new Date().toLocaleTimeString() + '  ' + s; el.scrollTop = el.scrollHeight; }
 
+  $('pick').onclick = () => { pickPort.forceNew = true; $('go').click(); };
   $('go').onclick = async () => {
     $('err').textContent = '';
     await ME.ready;
