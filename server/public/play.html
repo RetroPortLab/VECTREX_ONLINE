@@ -202,7 +202,7 @@
 
   // ---- the status ----
   const kv = (rows) => rows.map(([k, v, c]) => `<dt>${esc(k)}</dt><dd class="${c || ''}">${esc(v)}</dd>`).join('');
-  const GAME = { strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', ball: 'BOOST BALL', netlink: 'Link Test' };
+  const GAME = { strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', ball: 'VECTOR BALL', netlink: 'Link Test' };
   const ROOMY = { strike: 1, cycles: 1, rocks: 1, ball: 1 };
   function show(s) {
     const ok = s.cart === 'ok';

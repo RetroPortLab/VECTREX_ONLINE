@@ -189,7 +189,7 @@
     out.push([RB.OFF_COMMIT, new Pack(8).u32(commitSeq).u8(buf).skip(3).done()]);
     return out;
   }
-  // ---- BOOST BALL's mailbox (vectrex/boostball/src/vbb_box.h, bridge/ballbox.py) -------------------
+  // ---- VECTOR BALL's mailbox (vectrex/boostball/src/vbb_box.h, bridge/ballbox.py) -------------------
   const BB = { SIZE: 816, OFF_LOCAL: 8, LOCAL_END: 40, OFF_COMMIT: 168, OFF_SNAP: 176, SNAP_SIZE: 320, SNAP_CAR: 24, SNAP_EVT: 72, MAX_CAR: 6, MAX_EVT: 8, MAX_ROSTER: 8 };
   function decodeBallLocal(raw) {
     const v = dv(raw), o = BB.OFF_LOCAL;
@@ -382,7 +382,7 @@
         how = 'found by scanning RAM';
       }
       this.game = game;
-      this.log(`cart: ${{ strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', ball: 'BOOST BALL' }[game] || 'link test'} mailbox at ${this.addr.toString(16)} (${how})`);
+      this.log(`cart: ${{ strike: 'VEC STRIKE', cycles: 'LIGHT CYCLES', rocks: 'CO-OP ASTEROIDS', ball: 'VECTOR BALL' }[game] || 'link test'} mailbox at ${this.addr.toString(16)} (${how})`);
     }
     async scan() {
       // One read at a time, like the monitor's own tools do (the cart's answers can overrun if
@@ -706,7 +706,7 @@
       switch (m.t) {
         case 'ping': this.wsend({ t: 'pong', id: m.id }); break;
         case 'rtt': this.status.rtt = toI(m.ms); this.setLink(this.status.rtt); break;
-        case 'league':             // BOOST BALL: your rating, and what the last match did to it
+        case 'league':             // VECTOR BALL: your rating, and what the last match did to it
           this.status.league = { rating: m.rating, division: m.division, placed: m.placed, matches: m.matches, delta: m.delta === undefined ? null : m.delta, season: m.season };
           if (m.delta !== undefined && m.delta !== null) this.log(`league: ${m.delta >= 0 ? '+' : ''}${m.delta} → ${m.rating} (${m.division})`);
           break;
@@ -751,7 +751,7 @@
             this.myId = toI(m.id);
             this.status.slot = this.myId; this.status.peers = toI(m.peers); this.status.account = m.account || null;
             this.setLink(undefined, toI(m.peers), SB.VL_ROOM);
-            this.log(`net: in ${cycles ? 'LIGHT CYCLES' : rocks ? 'CO-OP ASTEROIDS' : ball ? 'BOOST BALL' : 'VEC STRIKE'} room '${m.room}' as P${this.myId} (${m.peers} ${cycles ? 'rider' : rocks ? 'ship' : ball ? 'car' : 'pilot'}(s) here)${m.account ? ` as ${m.account}` : ' as a guest'}`);
+            this.log(`net: in ${cycles ? 'LIGHT CYCLES' : rocks ? 'CO-OP ASTEROIDS' : ball ? 'VECTOR BALL' : 'VEC STRIKE'} room '${m.room}' as P${this.myId} (${m.peers} ${cycles ? 'rider' : rocks ? 'ship' : ball ? 'car' : 'pilot'}(s) here)${m.account ? ` as ${m.account}` : ' as a guest'}`);
           } else {
             this.status.slot = toI(m.slot); this.status.peers = toI(m.peers);
             this.setLink(undefined, toI(m.peers), toI(m.slot));

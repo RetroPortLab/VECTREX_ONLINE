@@ -310,7 +310,7 @@
     }
     if (rv.evlast === null) { rv.evlast = 0; for (const e of m.ev || []) rv.evlast = e[0]; }
   }
-  // BOOST BALL: {t:"bsn"} every server tick (60 ms): every car, the ball, the pads, the clock and score, and the last events.
+  // VECTOR BALL: {t:"bsn"} every server tick (60 ms): every car, the ball, the pads, the clock and score, and the last events.
   const bv = { cars: new Map(), ball: { x: 128, y: 128, vx: 0, vy: 0, dx: 128, dy: 128, goal: 0, trail: [] }, st: 0, cd: 0, clock: 0, ot: 0, sa: 0, sb: 0, pads: 63, win: 3,
     tick: 60, at: 0, evlast: null, fx: [], team: {}, rating: {}, div: {}, goalAt: 0, goalTeam: 0, goalWho: '', shakeAt: 0, shakeMag: 0, last: 0, overAt: 0 };
   const TEAM_C = ['#5ff0ff', '#ff8a4d'], TEAM_N = ['ALPHA', 'BETA'];
@@ -451,7 +451,7 @@
         : mode === 'rocks'
           ? 'Build <b>CO-OP ASTEROIDS</b> onto the cart (<b>netrocks</b> in WSL), start it from the multicart menu, plug in its USB.'
         : mode === 'ball'
-          ? 'Build <b>BOOST BALL</b> onto the cart (<b>netboost</b> in WSL), start it from the multicart menu, plug in its USB.'
+          ? 'Build <b>VECTOR BALL</b> onto the cart (<b>netboost</b> in WSL), start it from the multicart menu, plug in its USB.'
         : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
     $('howSim').innerHTML = mode === 'strike'
       ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Add bots above: they fly by the same rules.'
@@ -463,7 +463,7 @@
           ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Bots fill each side to at least two cars.'
         : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
     $('legend').style.display = mode === 'netlink' ? '' : 'none';
-    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : mode === 'ball' ? 'BOOST BALL pitch' : '-127 … 127';
+    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : mode === 'ball' ? 'VECTOR BALL pitch' : '-127 … 127';
     if (mode === 'strike') return renderStrike(cur);
     if (mode === 'cycles') return renderCycles(cur);
     if (mode === 'rocks') return renderRocks(cur);
@@ -566,7 +566,7 @@
       return `<tr><td colspan="7" class="teamhead" style="color:${TEAM_C[t]}">${TEAM_N[t]} <b>${t ? r.sb : r.sa}</b></td></tr>${rows}`;
     };
     $('players').innerHTML = `<section class="panel strike">
-      <div class="bar"><span class="title">boost ball</span><span class="round">${stateName} · ${TEAM_N[0]} ${r.sa} – ${r.sb} ${TEAM_N[1]}</span>
+      <div class="bar"><span class="title">vector ball</span><span class="round">${stateName} · ${TEAM_N[0]} ${r.sa} – ${r.sb} ${TEAM_N[1]}</span>
         <span class="bots">bots ${nb} ${botAdmin ? '<button onclick="vsBots(-1)" title="remove a bot from each side">−</button><button onclick="vsBots(1)" title="add a bot to each side">+</button>' : ''}</span></div>
       <div class="board-wrap"><table class="board"><thead><tr><th>Car</th><th class="num">Goals</th><th class="num">Assists</th><th class="num">Saves</th><th>League</th><th>Link</th><th>Now</th></tr></thead>
       <tbody>${r.players.length ? side(0) + side(1) : '<tr><td colspan="7" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start a console in this room.</td></tr>'}</tbody></table></div></section>`;

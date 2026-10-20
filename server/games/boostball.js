@@ -1,4 +1,4 @@
-// BOOST BALL: rocket-car football, 1 to 3 consoles a side (bots fill the empty seats). The rules are
+// VECTOR BALL: rocket-car football, 1 to 3 consoles a side (bots fill the empty seats). The rules are
 // boostball.js; this is its page on the site, what goes on the leaderboards, and the league.
 //
 // A match counts for the stat leaderboards when two or more consoles took part. It is also rated for
@@ -10,7 +10,7 @@ const league = require('../league');
 
 const game = {
   id: 'boostball',
-  title: 'BOOST BALL',
+  title: 'VECTOR BALL',
   tagline: 'Rocket-car football on a vector pitch. Boost, bump, demolish and score, in a league with seasons.',
   players: 'up to 6 (3 a side)',
   bridgeNames: ['ball'],
@@ -23,7 +23,7 @@ const game = {
     'Matches last three minutes; a draw goes to a sudden-death overtime. Empty seats are filled by bots, so even one console can play a 2 against 2.',
     'Every match with a signed-in pilot on each side moves your league rating. Ratings are per season (a calendar month): after five placement matches you get a division, from Bronze to Champion, and a place in the season table.',
   ],
-  controls: [['Stick left / right', 'steer'], ['Stick up / down', 'accelerate / reverse'], ['Button 1', 'boost (uses the meter)'], ['Button 2', 'handbrake (slide)'],
+  controls: [['Stick left / right', 'steer'], ['Stick up, or button 3', 'accelerate (stick down: brake and reverse)'], ['Button 1', 'boost (uses the meter)'], ['Button 2', 'handbrake (slide)'],
     ['Button 4 (hold)', 'scoreboard'], ['Buttons 3 + 4 (hold 1 s)', 'quit to the title screen']],
   leaderboard: {
     order: ['wins', 'goals'],

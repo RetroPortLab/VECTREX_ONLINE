@@ -1,4 +1,4 @@
-// BOOST BALL: rocket-car football, run on the server. Two teams of up to three cars play on a
+// VECTOR BALL: rocket-car football, run on the server. Two teams of up to three cars play on a
 // 240 x 136 pitch with a goal at each end, one big ball and boost pads. Humans drive; empty seats
 // are filled by bots so every match is at least 2 against 2.
 //
