@@ -140,7 +140,7 @@
       $('instList').textContent = 'Reading the games ...'; $('instBox').hidden = false; $('instGo').disabled = true;
       instFiles = [];
       for (const g of list) instFiles.push(await WebInstaller.fetchGame(g));
-      $('instList').innerHTML = 'This will write these files to the cartridge\'s SD card (files with the same name are replaced), then reset it to the multicart menu:<br>' +
+      $('instList').innerHTML = 'This will write these files to the cartridge\'s SD card (files with the same name are replaced), then hand it to the multicart firmware (the screen goes black; press RESET on the Vectrex for the menu):<br>' +
         instFiles.map((f) => `&bull; ${esc(f.title)} <span class="note">(${esc(f.name)}, ${(f.data.length / 1024).toFixed(0)} KB)</span>`).join('<br>');
       $('instGo').disabled = false;
     } catch (e) { $('instBox').hidden = true; $('instErr').textContent = e.message; }
@@ -154,7 +154,7 @@
       $('instBarBox').hidden = false;
       await WebInstaller.installGames(port, files, { log: (s) => { $('instMsg').textContent = s; },
         progress: (t, a, b) => { $('instBar').style.width = (100 * a / b).toFixed(0) + '%'; $('instMsg').textContent = `${t}: ${(100 * a / b).toFixed(0)}%`; } });
-      $('instMsg').textContent = 'Done. The cartridge is resetting: choose the game in its menu with the Vectrex controller.';
+      $('instMsg').textContent = 'Done. The files are on the card. Press RESET on the Vectrex console for the menu (a black screen until then is normal), then choose the game with the controller.';
       instFiles = null;
     } catch (e) { $('instMsg').textContent = 'Failed: ' + e.message; $('instGo').disabled = false; }
     $('instCancel').disabled = false; $('instBarBox').hidden = true;

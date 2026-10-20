@@ -477,7 +477,7 @@
         log(`ok: ${f.name} verified on the SD card`);
       }
       await cart.rebootToMenu();
-      log('the cart is resetting to the multicart menu: choose the game with the Vectrex controller');
+      log('done: the cart is now in its multicart firmware (a black screen is normal). Press RESET on the Vectrex for the menu, then choose the game with the controller');
     } finally { await cart.close(); }
   }
 
