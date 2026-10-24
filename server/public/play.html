@@ -135,8 +135,8 @@
 
   // ---- the port ----
   async function pickPort() {
-    const filters = [{ usbVendorId: VID, usbProductId: PID }];
-    const known = (await navigator.serial.getPorts()).filter((p) => { const i = p.getInfo(); return i.usbVendorId === VID && i.usbProductId === PID; });
+    const filters = [{ usbVendorId: VID }];      // any Raspberry Pi USB id: some cartridges report 2E8A:0009, others 2E8A:10DB
+    const known = (await navigator.serial.getPorts()).filter((p) => { const i = p.getInfo(); return i.usbVendorId === VID; });
     if (known.length === 1 && !pickPort.forceNew) return known[0];
     pickPort.forceNew = false;
     return navigator.serial.requestPort({ filters });
@@ -240,7 +240,7 @@
   (async () => {
     if (LS.get('rpl_active') !== '1' || !('serial' in navigator) || !window.isSecureContext) return;
     await ME.ready;
-    const known = (await navigator.serial.getPorts()).filter((p) => { const i = p.getInfo(); return i.usbVendorId === VID && i.usbProductId === PID; });
+    const known = (await navigator.serial.getPorts()).filter((p) => { const i = p.getInfo(); return i.usbVendorId === VID; });
     if (known.length !== 1) return;
     if (!ME.user && !(LS.get('rpl_name') || '').trim()) return;
     $('remembered').textContent = 'You were connected: reconnecting to your console ...';

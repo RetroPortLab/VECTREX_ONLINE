@@ -184,7 +184,7 @@
     $('go').disabled = true;
     try {
       check('open', 'run', 'choose the cart in Chrome\'s list…');
-      port = await navigator.serial.requestPort({ filters: [{ usbVendorId: VID, usbProductId: PID }] });
+      port = await navigator.serial.requestPort({ filters: [{ usbVendorId: VID }] });
       const info = port.getInfo();
       await port.open({ baudRate: 115200 });
       try { await port.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch { /* not every port has the lines */ }
