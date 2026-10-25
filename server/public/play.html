@@ -155,6 +155,10 @@
     let port;
     try { port = await pickPort(); }
     catch (e) { $('err').textContent = e.name === 'NotFoundError' ? 'No cartridge chosen. Is it plugged in and running a game?' : e.message; return; }
+    if (port.getInfo().usbProductId === 0x0009) {         // the multicart menu's own serial port: no game (and no monitor) is running
+      $('err').textContent = 'This looks like the cartridge menu, not a running game (USB 2E8A:0009). On the Vectrex, start a NetLink game from the menu (Light Cycles, Asteroids, VEC STRIKE or VECTOR BALL) and wait for its title screen, then press Connect again. A running game shows up as a different device.';
+      return;
+    }
     LS.set('rpl_active', '1'); $('sbar').hidden = false; document.body.classList.add('connected'); $('sroom').textContent = room || 'arena';
     $('setup').hidden = true; $('live').hidden = false; $('log').textContent = '';
     $('watch').href = '/watch?room=' + encodeURIComponent(room || 'arena');
