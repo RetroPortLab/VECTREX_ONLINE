@@ -139,6 +139,8 @@
   .div.Bronze { color: #d09a6a; } .div.Silver { color: #cfd8de; } .div.Gold { color: #ffd76e; } .div.Platinum { color: #7ff0e0; } .div.Diamond { color: #8fb8ff; } .div.Champion { color: #ff8ad8; }
   pre { margin: 6px 0 0; background: #070a0d; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--text);
         white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+.kick { background: none; border: 1px solid var(--line); color: var(--bad); border-radius: 6px; padding: 0 6px; margin-left: 6px; cursor: pointer; font: inherit; line-height: 1.3; }
+.kick:hover { border-color: var(--bad); }
 </style>
 </head>
 <body>
@@ -371,6 +373,15 @@
     try { await fetch(`/api/bots?room=${encodeURIComponent(room)}&add=${delta}`, { method: 'POST' }); } catch { /* next stats tells */ }
   }
   window.vsBots = bots;
+  const kickBtn = (p) => kickAdmin && !p.bot ? ` <button class="kick" onclick="vsKick(${p.slot})" title="remove this player from the room">&#10005;</button>` : '';
+  window.vsKick = async (slot) => {
+    const nm = sv.names[slot] || 'this player';
+    if (!window.confirm(`Remove ${nm} from the room?`)) return;
+    try {
+      const res = await fetch(`/api/kick?room=${encodeURIComponent(room)}&slot=${slot}`, { method: 'POST' });
+      if (!res.ok) window.alert((await res.json().catch(() => ({}))).error || 'could not remove that player');
+    } catch { /* the next stats update shows it */ }
+  };
 
   function onState(m) {
     if (m.room !== room) return;
@@ -498,7 +509,7 @@
     const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
     const rows = r.players.map((p, i) => {
       const link = p.bot ? '<span class="tagb">BOT</span>'
-        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 20 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 20 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>${kickBtn(p)}`;
       const state = !p.inGame ? 'title screen' : p.alive ? 'flying' : 'respawning';
       return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.score ? 'lead' : ''}">
         <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
@@ -527,7 +538,7 @@
     const stateName = ['waiting for pilots', 'next wave', 'flying', 'out of lives'][r.state] || '';
     const rows = r.players.map((p, i) => {
       const link = p.bot ? '<span class="tagb">BOT</span>'
-        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>${kickBtn(p)}`;
       const state = !p.inGame ? 'title screen' : p.alive ? 'flying' : 'waiting to respawn';
       return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.score ? 'lead' : ''}">
         <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
@@ -557,7 +568,7 @@
       const ps = r.players.filter((p) => p.team === t).sort((a, b) => b.goals - a.goals || b.assists - a.assists);
       const rows = ps.map((p) => {
         const link = p.bot ? '<span class="tagb">BOT</span>'
-          : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+          : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>${kickBtn(p)}`;
         const lg = p.rating ? `<span class="div ${esc(p.division || '')}">${esc(p.division || '')}</span> ${p.rating}` : (p.account || p.bot ? '–' : '<span style="color:var(--dim)">guest</span>');
         const state = p.bot ? 'bot' : !p.inGame ? 'title screen' : p.alive ? 'driving' : 'demolished';
         return `<tr class="${p.alive || !p.inGame ? '' : 'dead'}"><td><span class="sw" style="color:${TEAM_C[t]};background:${TEAM_C[t]}"></span>${esc(p.name)}</td>
@@ -587,7 +598,7 @@
     const stateName = ['waiting for riders', 'get ready', 'racing', 'round over'][r.state] || '';
     const rows = r.players.map((p, i) => {
       const link = p.bot ? '<span class="tagb">BOT</span>'
-        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>`;
+        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 5 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>${kickBtn(p)}`;
       const state = !p.inGame ? 'title screen' : p.alive ? 'riding' : 'derezzed';
       return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.wins ? 'lead' : ''}">
         <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
@@ -634,8 +645,8 @@
         <div class="cartline ${cartOk ? '' : 'warn'}" title="${esc(st.cart || '')}">${esc(cartOk ? (st.fw || 'cart ok') : (st.cart || 'no status yet'))}</div></div>
     </section>`;
   }
-  let botAdmin = false;                       // only bot admins get the + and − buttons
-  fetch('/api/me').then((r) => r.json()).then((m) => { botAdmin = !!m.botAdmin; }).catch(() => {});
+  let botAdmin = false, kickAdmin = false;                       // only bot admins get the + and − buttons
+  fetch('/api/me').then((r) => r.json()).then((m) => { botAdmin = !!m.botAdmin; kickAdmin = !!m.kickAdmin; }).catch(() => {});
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function drawIO(slot, s) {
