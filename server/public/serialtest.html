@@ -211,7 +211,7 @@
       log('monitor: ' + v);
     } catch (e) {
       let menu = false; try { menu = port.getInfo().usbProductId === 0x0009; } catch { /* no info */ }
-      if (menu) return check('mon', 'fail', `${e.message}. This port is USB 2E8A:0009, the cartridge's menu, so no NetLink game is running. Start a NetLink game from the menu on the Vectrex, wait for its title screen, then reload this page and connect again.`);
+      if (menu) return check('mon', 'fail', `${e.message}. This port is USB 2E8A:0009, the cartridge's menu, so no NetLink game is running, or MONITOR.BIN is missing from the root of the SD card (the games load it to bring up USB). Start a NetLink game from the menu, wait for its title screen, then reload this page and connect again.`);
       return check('mon', 'fail', `${e.message}. Chrome lists the cart's two ports; this may be the second (gdb's). Reload and pick the other one.`);
     }
 

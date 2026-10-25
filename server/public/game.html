@@ -28,7 +28,7 @@
     const a = document.getElementById('dl');
     a.href = '/downloads/' + g.download.file; a.hidden = false; a.textContent = 'Download ' + g.title;
     const n = document.getElementById('dlnote');
-    n.hidden = false; n.textContent = `A zip with ${g.download.name}: unzip it, copy the .um2 to your UVMC2's SD card, and start it from the multicart menu. It is built with the USB monitor, so Netlink can talk to it.`;
+    n.hidden = false; n.innerHTML = `A zip with ${esc(g.download.name)} and MONITOR.BIN: unzip it and copy <b>both files into the root of your UVMC2's SD card</b> (not a subfolder), then start the game from the multicart menu. MONITOR.BIN is what lets the game talk to Netlink over USB: without it the cartridge never shows up in the browser.`;
   }
   if (!g.download && g.cart && g.cart.build) {
     const n = document.getElementById('dlnote');

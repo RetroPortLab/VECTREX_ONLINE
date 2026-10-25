@@ -464,7 +464,7 @@
   function crc32(d) { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC_T[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
 
   // the one .um2 inside a game's zip (stored or deflated), read via the central directory
-  async function unzipUm2(buf) {
+  async function unzipUm2(buf, want = /\.um2$/i, maxSize = 4 << 20) {
     const d = new Uint8Array(buf), v = new DataView(buf);
     let e = d.length - 22;
     while (e >= 0 && v.getUint32(e, true) !== 0x06054b50) e--;
@@ -476,7 +476,7 @@
       const nl = v.getUint16(p + 28, true), xl = v.getUint16(p + 30, true), cl = v.getUint16(p + 32, true), lh = v.getUint32(p + 42, true);
       const name = new TextDecoder().decode(d.subarray(p + 46, p + 46 + nl));
       p += 46 + nl + xl + cl;
-      if (!/\.um2$/i.test(name) || name.includes('/') || usize > (4 << 20)) continue;
+      if (!want.test(name) || name.includes('/') || usize > maxSize) continue;
       const start = lh + 30 + v.getUint16(lh + 26, true) + v.getUint16(lh + 28, true);
       const raw = d.subarray(start, start + csize);
       let out;
@@ -486,7 +486,7 @@
       if (out.length !== usize) throw new CartError(`${name}: bad zip entry`);
       return { name, data: out };
     }
-    throw new CartError('no .um2 in the zip');
+    throw new CartError(`no ${want === undefined ? '' : want.source.includes('um2') ? '.um2' : 'file'} in the zip`);
   }
 
   // [{id, title, url}] the site offers as downloads, and the files themselves
@@ -497,7 +497,9 @@
   async function fetchGame(g) {
     const r = await fetch(g.url);
     if (!r.ok) throw new CartError(`${g.title}: HTTP ${r.status}`);
-    return { title: g.title, ...(await unzipUm2(await r.arrayBuffer())) };
+    const buf = await r.arrayBuffer();
+    const monitor = await unzipUm2(buf, /^MONITOR\.BIN$/i, 1 << 20).catch(() => null);      // the games load it off the card's root: it has to be there
+    return { title: g.title, monitor, ...(await unzipUm2(buf)) };
   }
   // files: [{title, name, data}]. Opens the port, uploads each (verified by CRC), resets the cart to its menu.
   async function installGames(port, files, { log = () => {}, progress } = {}) {
@@ -508,6 +510,12 @@
         log(`upload: ${f.title} (${f.name}, ${f.data.length.toLocaleString()} bytes)`);
         await cart.upload(f.name, f.data, progress && ((a, b) => progress(f.title, a, b)));
         log(`ok: ${f.name} verified on the SD card`);
+      }
+      const mon = files.map((f) => f.monitor).find(Boolean);
+      if (mon) {
+        log(`upload: ${mon.name} (the USB monitor the games load, ${mon.data.length.toLocaleString()} bytes)`);
+        await cart.upload(mon.name, mon.data, progress && ((a, b) => progress('MONITOR.BIN', a, b)));
+        log(`ok: ${mon.name} verified on the SD card`);
       }
       await cart.rebootToMenu();
       log('done: the games are on the SD card. Now disconnect the USB cable and power-cycle the Vectrex (a black screen until then is normal), then choose the game in the menu with the controller');

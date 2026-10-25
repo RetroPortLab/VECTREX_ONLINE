@@ -80,6 +80,7 @@
       <h2 style="margin-top:0">What you need</h2>
       <ol class="steps">
         <li>A Vectrex with the UVMC2 cartridge, running <a href="/games/vecstrike">VEC STRIKE</a>, <a href="/games/lightcycles">LIGHT CYCLES</a>, <a href="/games/asteroids">CO-OP ASTEROIDS</a> or the <a href="/games/linktest">Link Test</a>, built with the USB monitor on.</li>
+        <li><b>MONITOR.BIN in the root of the SD card</b>, next to the game (not in a subfolder). It comes in every game's download zip; the games load it when they start, and without it the cartridge never shows up on USB.</li>
         <li>A USB cable from the cartridge to this computer.</li>
         <li>Chrome, Edge or Opera on a desktop. When you press Connect, pick the cartridge in the list.</li>
         <li>The cartridge shows up as two ports. If it doesn't answer, press <b>Choose port…</b> and pick the other one.</li>
@@ -156,7 +157,7 @@
     try { port = await pickPort(); }
     catch (e) { $('err').textContent = e.name === 'NotFoundError' ? 'No cartridge chosen. Is it plugged in and running a game?' : e.message; return; }
     if (port.getInfo().usbProductId === 0x0009) {         // the multicart menu's own serial port: no game (and no monitor) is running
-      $('err').textContent = 'This looks like the cartridge menu, not a running game (USB 2E8A:0009). On the Vectrex, start a NetLink game from the menu (Light Cycles, Asteroids, VEC STRIKE or VECTOR BALL) and wait for its title screen, then press Connect again. A running game shows up as a different device.';
+      $('err').textContent = 'This looks like the cartridge menu, not a running game (USB 2E8A:0009). On the Vectrex, start a NetLink game from the menu (Light Cycles, Asteroids, VEC STRIKE or VECTOR BALL) and wait for its title screen, then press Connect again. A running game shows up as a different device. If the game is running and it still shows this, MONITOR.BIN is probably missing from the root of the SD card: copy it there from any game\'s download zip.';
       return;
     }
     LS.set('rpl_active', '1'); $('sbar').hidden = false; document.body.classList.add('connected'); $('sroom').textContent = room || 'arena';
