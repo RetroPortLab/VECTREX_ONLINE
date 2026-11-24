@@ -369,6 +369,50 @@
     }
     if (bv.evlast === null) { bv.evlast = 0; for (const e of m.ev || []) bv.evlast = e[0]; }
   }
+  // FRAGNET: {t:"fmap"} once (the arena), {t:"fsn"} every tick: pilots, bolts, health packs, the clock, events.
+  const fv = { map: null, pilots: new Map(), bolts: new Map(), items: 15, st: 0, cd: 0, clock: 0, fl: 15, win: 0, tick: 60, at: 0, evlast: null, fx: [], last: 0, flashAt: 0, flashTxt: '' };
+  function onFmap(m) { if (m.room === room) fv.map = m.map; }
+  function onFsn(m) {
+    if (m.room !== room) return;
+    const now = performance.now();
+    if (m.full) fv.evlast = null;
+    const seen = new Set();
+    for (const [id, x, y, a, fl, hp] of m.pilots || []) {
+      seen.add(id);
+      let p = fv.pilots.get(id);
+      if (!p) { p = { dx: x / 256, dy: y / 256 }; fv.pilots.set(id, p); }
+      Object.assign(p, { x: x / 256, y: y / 256, a, fl, hp, at: now });
+    }
+    for (const id of [...fv.pilots.keys()]) if (!seen.has(id)) fv.pilots.delete(id);
+    const bs = new Set();
+    for (const [id, x, y, a, owner] of m.bolts || []) {
+      bs.add(id);
+      let b = fv.bolts.get(id);
+      if (!b) { b = { dx: x / 256, dy: y / 256 }; fv.bolts.set(id, b); }
+      Object.assign(b, { x: x / 256, y: y / 256, a, owner, at: now });
+    }
+    for (const id of [...fv.bolts.keys()]) if (!bs.has(id)) fv.bolts.delete(id);
+    Object.assign(fv, { st: m.st, cd: m.cd, clock: m.clock, fl: m.fl, items: m.items, win: m.win, tick: m.tick_ms || 60, at: now });
+    const burst = (x, y, n, sp, c, life) => { for (let i = 0; i < n; i++) { const t = Math.random() * Math.PI * 2, v = sp * (0.3 + Math.random() * 0.7); fv.fx.push({ x, y, vx: Math.cos(t) * v, vy: Math.sin(t) * v, t0: now, life, c }); } if (fv.fx.length > 500) fv.fx.splice(0, fv.fx.length - 500); };
+    for (const e of m.ev || []) {
+      const [eid, kind, ex, ey, a, b] = e;
+      if (fv.evlast === null) continue;
+      if (eid === fv.evlast || ((eid - fv.evlast) & 255) >= 128) continue;
+      fv.evlast = eid;
+      const x = ex / 8, y = ey / 8;
+      if (kind === 1) { burst(x, y, 40, 3, hue(a), 900); burst(x, y, 16, 2, '#ffffff', 600); fv.flashAt = now; fv.flashTxt = b ? `${nameOf(b)} fragged ${nameOf(a)}` : `${nameOf(a)} died`;
+        addEvent({ room, ts: Date.now(), msg: b ? `${nameOf(b)} fragged ${nameOf(a)}` : `${nameOf(a)} died` }); }
+      else if (kind === 2) burst(x, y, 6, 1.5, hue(a), 400);
+      else if (kind === 3) burst(x, y, 5, 1, hue(a), 300);
+      else if (kind === 4) burst(x, y, 12, 1.2, '#9dff7a', 500);
+      else if (kind === 5) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} joined` });
+      else if (kind === 6) addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} left` });
+      else if (kind === 7) burst(x, y, 10, 1, '#9dff7a', 500);
+      else if (kind === 8) addEvent({ room, ts: Date.now(), msg: 'FIGHT!' });
+      else if (kind === 9) addEvent({ room, ts: Date.now(), level: 'warn', msg: `${nameOf(a)} wins the match with ${b} frags` });
+    }
+    if (fv.evlast === null) { fv.evlast = 0; for (const e of m.ev || []) fv.evlast = e[0]; }
+  }
   async function bots(delta) {
     try { await fetch(`/api/bots?room=${encodeURIComponent(room)}&add=${delta}`, { method: 'POST' }); } catch { /* next stats tells */ }
   }
@@ -404,6 +448,8 @@
       else if (m.t === 'ssnap') onSnap(m);
       else if (m.t === 'ast') onAst(m);
       else if (m.t === 'bsn') onBsn(m);
+      else if (m.t === 'fsn') onFsn(m);
+      else if (m.t === 'fmap') onFmap(m);
       else if (m.t === 'sev') onSev(m);
       else if (m.t === 'cyc') onCyc(m);
       else if (m.t === 'sroster') { if (m.room === room) onRoster(m.players); }
@@ -447,13 +493,13 @@
     for (const r of rs) {
       const b = document.createElement('button');
       b.className = 'chip' + (r.name === room ? ' on' : '');
-      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : r.type === 'rocks' ? `${r.name} <small>${r.players.length}/8 ☄</small>` : r.type === 'ball' ? `${r.name} <small>${r.players.length}/6 ●</small>` : `${r.name} <small>${r.players.length}/2</small>`;
+      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : r.type === 'rocks' ? `${r.name} <small>${r.players.length}/8 ☄</small>` : r.type === 'ball' ? `${r.name} <small>${r.players.length}/6 ●</small>` : r.type === 'fragnet' ? `${r.name} <small>${r.players.length}/6 ✚</small>` : `${r.name} <small>${r.players.length}/2</small>`;
       b.onclick = () => watch(r.name);
       $('rooms').appendChild(b);
     }
     const cur = rs.find((r) => r.name === room);
     const players = cur ? cur.players : [];
-    mode = cur && (cur.type === 'strike' || cur.type === 'cycles' || cur.type === 'rocks' || cur.type === 'ball') ? cur.type : 'netlink';
+    mode = cur && (cur.type === 'strike' || cur.type === 'cycles' || cur.type === 'rocks' || cur.type === 'ball' || cur.type === 'fragnet') ? cur.type : 'netlink';
     document.querySelector('.screen').style.aspectRatio = mode === 'ball' ? '16 / 10' : '1 / 1';
     $('howGame').innerHTML = mode === 'strike'
       ? 'Build <b>VEC STRIKE</b> onto the cart (<b>netstrike</b> in WSL), start it from the multicart menu, plug in its USB.'
@@ -463,6 +509,8 @@
           ? 'Build <b>CO-OP ASTEROIDS</b> onto the cart (<b>netrocks</b> in WSL), start it from the multicart menu, plug in its USB.'
         : mode === 'ball'
           ? 'Build <b>VECTOR BALL</b> onto the cart (<b>netboost</b> in WSL), start it from the multicart menu, plug in its USB.'
+        : mode === 'fragnet'
+          ? 'Run <b>FRAGNET.NEX</b> on a ZX Spectrum Next with its Wi-Fi set up; it joins through the Next gateway.'
         : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
     $('howSim').innerHTML = mode === 'strike'
       ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Add bots above: they fly by the same rules.'
@@ -472,13 +520,16 @@
           ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? A bot wingman flies with you.'
         : mode === 'ball'
           ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Bots fill each side to at least two cars.'
+        : mode === 'fragnet'
+          ? 'Alone? Bots fill the arena to four pilots.'
         : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
     $('legend').style.display = mode === 'netlink' ? '' : 'none';
-    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : mode === 'ball' ? 'VECTOR BALL pitch' : '-127 … 127';
+    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : mode === 'ball' ? 'VECTOR BALL pitch' : mode === 'fragnet' ? 'FRAGNET arena (from above)' : '-127 … 127';
     if (mode === 'strike') return renderStrike(cur);
     if (mode === 'cycles') return renderCycles(cur);
     if (mode === 'rocks') return renderRocks(cur);
     if (mode === 'ball') return renderBall(cur);
+    if (mode === 'fragnet') return renderFrag(cur);
     const bySlot = { 1: players.find((p) => p.slot === 1), 2: players.find((p) => p.slot === 2) };
     $('players').innerHTML = [1, 2].map((s) => card(s, bySlot[s])).join('');
     for (const s of [1, 2]) if (live[s] && bySlot[s]) drawIO(s, live[s]);
@@ -592,6 +643,35 @@
     drawChartSeries(humans.slice(0, 8).map((p) => ({ c: TEAM_C[p.team], pts: p.rttHist || [] })));
   }
 
+  function renderFrag(r) {
+    for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = p.bot; }
+    const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
+    const rows = r.players.map((p, i) => {
+      const link = p.bot ? '<span class="tagb">BOT</span>'
+        : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 20 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>${kickBtn(p)}`;
+      const state = !p.inGame ? 'title screen' : p.alive ? `${p.hp} hp` : 'respawning';
+      return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.frags ? 'lead' : ''}">
+        <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
+        <td class="num">${p.frags}</td><td class="num">${p.deaths}</td><td>${link}</td><td style="color:var(--dim)">${state}</td></tr>`;
+    }).join('');
+    const stateName = ['waiting for pilots', 'get ready', 'fighting', 'match over'][r.state] || '';
+    const win = r.win ? `<span class="win">${esc(nameOf(r.win))} wins the match</span>` : `<span class="round">${stateName} · first to ${r.fl || 15} frags</span>`;
+    $('players').innerHTML = `<section class="panel strike">
+      <div class="bar"><span class="title">fragnet</span>${win}
+        <span class="bots">bots ${nb} ${botAdmin ? '<button onclick="vsBots(-1)" title="remove a bot">−</button><button onclick="vsBots(1)" title="add a bot">+</button>' : ''}</span></div>
+      <div class="board-wrap"><table class="board"><thead><tr><th>#</th><th>Pilot</th><th class="num">Frags</th><th class="num">Deaths</th><th>Link</th><th>Now</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start FRAGNET on a Next in this room.</td></tr>'}</tbody></table></div></section>`;
+    $('e2e').innerHTML = `${humans.length} <small>consoles</small>`;
+    $('e2eFrames').innerHTML = `${nb} <small>bots</small>`;
+    $('relayed').textContent = humans.reduce((n, p) => n + (p.inHz || 0), 0) || '–';
+    $('linkNote').textContent = humans.length ? 'RTT of each console to the relay' : 'no consoles yet';
+    document.querySelector('.summary div:nth-child(1) dt').textContent = 'Consoles';
+    document.querySelector('.summary div:nth-child(2) dt').textContent = 'Bots';
+    document.querySelector('.summary div:nth-child(3) dt').textContent = 'Console updates / s';
+    $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
+    drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
+  }
+
   function renderCycles(r) {
     for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = p.bot; }
     const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
@@ -685,6 +765,7 @@
     if (mode === 'cycles') { drawCycles(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     if (mode === 'rocks') { drawRocks(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     if (mode === 'ball') { drawBall(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
+    if (mode === 'fragnet') { drawFrag(d, now, w, h); requestAnimationFrame(frame); return; }
     for (const slot of [1, 2]) {
       const p = live[slot];
       if (!p) continue;
@@ -855,6 +936,63 @@
   const bloomCv = document.createElement('canvas'), bctx = bloomCv.getContext('2d');
   const bloomOk = 'filter' in bctx;
   const lerpA = (a, b, t) => a + (((b - a + 128) % 256 + 256) % 256 - 128) * t;
+  function drawFrag(d, now, w, h) {
+    const M = fv.map;
+    if (!M) { sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center'; sctx.fillText('waiting for the arena in room "' + room + '"', w / 2, h / 2); sctx.textAlign = 'start'; return; }
+    const dt = Math.min(64, now - (fv.last || now)); fv.last = now;
+    const ease = 1 - Math.exp(-dt / 50);
+    const n = M.length, S = Math.min(w, h) / (n + 1), ox = (w - n * S) / 2, oy = (h - n * S) / 2;
+    const X = (x) => ox + x * S, Y = (y) => oy + y * S;
+    const WC = { S: '#8a93a6', M: '#5f8fd6', T: '#4ad6a0', '#': '#d07a52' };
+    for (let y = 0; y < n; y++) for (let x = 0; x < M[y].length; x++) {
+      const ch = M[y][x];
+      if ('.PH'.includes(ch)) continue;
+      sctx.fillStyle = (WC[ch] || '#8a93a6') + '30'; sctx.fillRect(X(x), Y(y), S, S);
+      sctx.strokeStyle = WC[ch] || '#8a93a6'; sctx.lineWidth = d; sctx.shadowColor = sctx.strokeStyle; sctx.shadowBlur = 6 * d;
+      for (const [dx, dy, x0, y0, x1, y1] of [[0, -1, 0, 0, 1, 0], [0, 1, 0, 1, 1, 1], [-1, 0, 0, 0, 0, 1], [1, 0, 1, 0, 1, 1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (ny < 0 || ny >= n || nx < 0 || nx >= M[ny].length || !'.PH'.includes(M[ny][nx])) continue;
+        shape(sctx, [[X(x + x0), Y(y + y0)], [X(x + x1), Y(y + y1)]]);
+      }
+    }
+    sctx.shadowBlur = 0;
+    let hi = 0;
+    for (let y = 0; y < n; y++) for (let x = 0; x < M[y].length; x++) if (M[y][x] === 'H') {
+      const on = fv.items & (1 << hi++);
+      sctx.strokeStyle = on ? '#9dff7a' : '#9dff7a33'; sctx.lineWidth = 2 * d; const c = S * 0.22;
+      shape(sctx, [[X(x + 0.5) - c, Y(y + 0.5)], [X(x + 0.5) + c, Y(y + 0.5)]]); shape(sctx, [[X(x + 0.5), Y(y + 0.5) - c], [X(x + 0.5), Y(y + 0.5) + c]]);
+    }
+    const fr = Math.min(1.5, (now - fv.at) / Math.max(30, fv.tick));
+    for (const b of fv.bolts.values()) {
+      const [ux, uy] = [Math.cos(b.a * Math.PI / 512), Math.sin(b.a * Math.PI / 512)];
+      const tx = b.x + ux * 0.6 * fr, ty = b.y + uy * 0.6 * fr;
+      b.dx += (tx - b.dx) * Math.min(1, ease * 2); b.dy += (ty - b.dy) * Math.min(1, ease * 2);
+      sctx.strokeStyle = hue(b.owner); sctx.shadowColor = hue(b.owner); sctx.shadowBlur = 10 * d; sctx.lineWidth = 3 * d;
+      shape(sctx, [[X(b.dx - ux * 0.35), Y(b.dy - uy * 0.35)], [X(b.dx), Y(b.dy)]]);
+    }
+    for (const [id, p] of fv.pilots) {
+      p.dx += (p.x - p.dx) * ease; p.dy += (p.y - p.dy) * ease;
+      const a = p.a * Math.PI / 512, c = hue(id), r = S * 0.38;
+      const pt = (ang, rr) => [X(p.dx) + Math.cos(a + ang) * rr, Y(p.dy) + Math.sin(a + ang) * rr];
+      sctx.strokeStyle = (p.fl & 4) ? '#ffffff' : c; sctx.shadowColor = c; sctx.shadowBlur = 12 * d; sctx.lineWidth = 2 * d;
+      shape(sctx, [pt(0, r * 1.2), pt(2.5, r), pt(-2.5, r)], true);
+      sctx.strokeStyle = c + '30'; shape(sctx, [pt(-0.52, S * 2.2), [X(p.dx), Y(p.dy)], pt(0.52, S * 2.2)]);
+      sctx.shadowBlur = 0; sctx.fillStyle = c; sctx.font = `${10 * d}px IBM Plex Mono, monospace`;
+      sctx.fillText(`${nameOf(id)} ${p.hp}`, X(p.dx) + r + 3 * d, Y(p.dy) - r);
+    }
+    fv.fx = fv.fx.filter((f) => now - f.t0 < f.life);
+    for (const f of fv.fx) {
+      const t = (now - f.t0) / f.life, x = f.x + f.vx * t, y = f.y + f.vy * t;
+      sctx.fillStyle = f.c; sctx.globalAlpha = 1 - t; sctx.fillRect(X(x) - d, Y(y) - d, 2.5 * d, 2.5 * d);
+    }
+    sctx.globalAlpha = 1;
+    sctx.textAlign = 'center'; sctx.font = `600 ${14 * d}px IBM Plex Mono, monospace`; sctx.fillStyle = '#e8fbff';
+    const m = Math.floor(fv.clock / 60), sec = fv.clock % 60;
+    sctx.fillText(fv.st === 3 ? `${nameOf(fv.win)} WINS` : fv.st === 1 ? 'GET READY' : `${m}:${String(sec).padStart(2, '0')}`, w / 2, oy - 4 * d);
+    if (now - fv.flashAt < 1800) { sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.fillStyle = '#ffcf6e'; sctx.fillText(fv.flashTxt, w / 2, oy + n * S + 14 * d); }
+    sctx.textAlign = 'start';
+  }
+
   function drawBall(sx0, sy0, k0, d, now, w, h) {
     const dt = Math.min(64, now - (bv.last || now)); bv.last = now;
     const topH = 56 * d, botH = 20 * d, mx = 16 * d;
