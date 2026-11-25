@@ -21,9 +21,9 @@ const C = {
 };
 const TEAM_NAMES = ['ULTIMATE', 'OCEAN', 'CODEMASTERS', 'HEWSON', 'US GOLD', 'GREMLIN', 'IMAGINE', 'DURELL'];
 const ST = { LOBBY: 0, LINEUP: 1, RESTART: 2, PLAY: 3, GOAL: 4, HALF: 5, FULL: 6 };
-const RS = { NONE: 0, KICKOFF: 1, THROW: 2, CORNER: 3, GOALKICK: 4 };
+const RS = { NONE: 0, KICKOFF: 1, THROW: 2, CORNER: 3, GOALKICK: 4, FREEKICK: 5 };
 const ACT = { RUN: 0, KICK: 1, SLIDE: 2, DOWN: 3, DIVE: 4, THROW: 5, CHEER: 6, HEAD: 7 };
-const EV = { KICK: 1, SHOT: 2, BOUNCE: 3, POST: 4, GOAL: 5, WHISTLE: 6, TACKLE: 7, THROW: 8, CATCH: 9, CROWD: 10, HALF: 11, FULL: 12, SLIDE: 13, OUT: 14, START: 15 };
+const EV = { KICK: 1, SHOT: 2, BOUNCE: 3, POST: 4, GOAL: 5, WHISTLE: 6, TACKLE: 7, THROW: 8, CATCH: 9, CROWD: 10, HALF: 11, FULL: 12, SLIDE: 13, OUT: 14, START: 15, FOUL: 16, YELLOW: 17, RED: 18 };
 const IN = { LEFT: 1, RIGHT: 2, UP: 4, FIRE: 8, DOWN: 128 };
 const DX = [0, 1, 1, 1, 0, -1, -1, -1], DY = [-1, -1, 0, 1, 1, 1, 0, -1];
 const ROLE = ['GK', 'DF', 'DF', 'DF', 'DF', 'MF', 'MF', 'MF', 'MF', 'FW', 'FW'];
@@ -50,6 +50,8 @@ class SoccerRoom {
     this.score = [0, 0]; this.teams = [0, 1];
     this.flip = false;                              // second half: the sides have swapped ends
     this.rs = null;
+    this.ref = { id: 22, x: C.CX + 30, y: C.CY + 30, vx: 0, vy: 0, dir: 0, act: 0, anim: 0, animAcc: 0 };
+    this.cardT = 0; this.cardSpot = null;
     this.events = []; this.evtId = 0;
     this.match = 0; this.ranked = false; this.hadTwo = false;
     this.rosterSeq = 0; this.rosterDirty = true; this.lastRoster = 0;
@@ -65,7 +67,7 @@ class SoccerRoom {
   newPlayer(i) {
     const side = i < 11 ? 0 : 1, idx = i % 11;
     return { id: i, side, idx, role: ROLE[idx], x: C.CX, y: C.CY, vx: 0, vy: 0, dir: side ? 4 : 0, act: 0, actT: 0, anim: 0, animAcc: 0,
-      noPick: 0, stun: 0, tkCool: 0, mx: 0, my: 0, human: null, hold: 0, shotCool: 0, think: 0, tx: C.CX, ty: C.CY, goalie: idx === 0, divT: 0 };
+      noPick: 0, stun: 0, tkCool: 0, mx: 0, my: 0, human: null, hold: 0, shotCool: 0, think: 0, tx: C.CX, ty: C.CY, goalie: idx === 0, divT: 0, yellow: 0, out: false, frozen: 0, sendOff: false };
   }
 
   event(kind, a = 0) {
@@ -104,7 +106,7 @@ class SoccerRoom {
     p.input = (m.in | 0) & 0x8F;
   }
 
-  sidePlayers(s) { return this.pl.slice(s * 11, s * 11 + 11); }
+  sidePlayers(s) { return this.pl.slice(s * 11, s * 11 + 11).filter((p) => !p.out); }
   // which way a side attacks (y sign): side A up in the first half
   att(side) { return (side === 0) !== this.flip ? -1 : 1; }
   ownY(side) { return this.att(side) < 0 ? C.Y1 : C.Y0; }
@@ -116,6 +118,8 @@ class SoccerRoom {
     this.match++;
     this.score = [0, 0]; this.clock = 0; this.clockFrac = 0; this.half = 1; this.flip = false; this.hadTwo = this.humans.length === 2;
     this.stats = [{ shots: 0 }, { shots: 0 }];
+    for (const q of this.pl) { q.out = false; q.yellow = 0; q.frozen = 0; q.sendOff = false; }
+    this.cardT = 0;
     for (const h of this.humans) { h.goals = 0; if (h.pick < 0) h.pick = h.side ? 1 : 0; }
     const a = this.seats[0] ? this.seats[0].pick : Math.floor(Math.random() * C.TEAMS);
     let b = this.seats[1] ? this.seats[1].pick : Math.floor(Math.random() * C.TEAMS);
@@ -132,6 +136,7 @@ class SoccerRoom {
   // everyone to their formation spots (for the line-up and kick-offs); ball = the centre
   formUp(kickTeam) {
     for (const p of this.pl) {
+      if (p.out) { p.x = -500; p.y = -500; continue; }
       const [tx, ty] = this.formationTarget(p, { x: C.CX, y: C.CY }, true);
       p.x = tx; p.y = ty; p.vx = p.vy = 0; p.act = 0; p.actT = 0; p.stun = 0; p.noPick = 0;
       p.dir = this.att(p.side) < 0 ? 0 : 4;
@@ -164,7 +169,7 @@ class SoccerRoom {
     }
     taker.vx = taker.vy = 0; taker.act = kind === RS.THROW ? ACT.THROW : 0; taker.actT = 0; taker.stun = 0;
     this.event(EV.WHISTLE, 0);
-    if (kind !== RS.KICKOFF) { this.event(EV.OUT, team); }
+    if (kind !== RS.KICKOFF && kind !== RS.FREEKICK) { this.event(EV.OUT, team); }
     for (const h of this.humans) if (h.side === team) h.ctl = taker.id;
     this.rosterDirty = true;
   }
@@ -254,7 +259,8 @@ class SoccerRoom {
   stepWorld() {
     const live = this.state === ST.PLAY || this.state === ST.RESTART;
     this.decide();
-    for (const p of this.pl) this.movePlayer(p);
+    for (const p of this.pl) { if (p.out) { p.x = -500; p.y = -500; p.vx = p.vy = 0; continue; } this.movePlayer(p); }
+    this.stepRef();
     this.separate();
     this.stepBall(live);
     if (live || this.state === ST.GOAL) this.contests();
@@ -287,7 +293,8 @@ class SoccerRoom {
     for (const p of this.pl) if (!ctls.has(p)) p.human = null;
     // the CPU
     const chasers = this.chasers();
-    for (const p of this.pl) if (!ctls.has(p)) this.aiIntent(p, chasers);
+    for (const p of this.pl) if (!ctls.has(p) && !p.out) this.aiIntent(p, chasers);
+    for (const p of this.pl) if (p.frozen > 0) { p.mx = p.my = 0; p.slideReq = false; p.frozen--; if (!p.frozen && p.sendOff) { p.out = true; this.rosterDirty = true; } }
   }
 
   humanIntent(h, p) {
@@ -400,7 +407,7 @@ class SoccerRoom {
     // the taker waits at the spot; the CPU takes it after a while, a human on the button (or after 6 s)
     if (!tk.human) { if (r.t >= r.wait) this.takeRestart(tk, 8 + Math.floor(Math.random() * 12), null); }
     else {
-      if (r.kind === RS.THROW || r.kind === RS.CORNER) this.moveCross(r, tk, tk.human);
+      if (r.kind === RS.THROW || r.kind === RS.CORNER || r.kind === RS.FREEKICK) this.moveCross(r, tk, tk.human);
       if (r.t >= 150) this.takeRestart(tk, 12, tk.human);
     }
   }
@@ -409,7 +416,7 @@ class SoccerRoom {
   moveCross(r, tk, h) {
     const att = this.att(tk.side);
     if (!r.cross) {
-      r.cross = r.kind === RS.THROW ? [r.spot[0] + (r.spot[0] < C.CX ? 1 : -1) * 90, r.spot[1] + att * 20] : [C.CX, this.oppY(tk.side) - att * 55];
+      r.cross = r.kind === RS.THROW ? [r.spot[0] + (r.spot[0] < C.CX ? 1 : -1) * 90, r.spot[1] + att * 20] : r.kind === RS.FREEKICK ? [C.CX, this.oppY(tk.side) - att * 12] : [C.CX, this.oppY(tk.side) - att * 55];
     }
     const i = h.input;
     const mx = ((i & IN.RIGHT) ? 1 : 0) - ((i & IN.LEFT) ? 1 : 0), my = ((i & IN.DOWN) ? 1 : 0) - ((i & IN.UP) ? 1 : 0);
@@ -417,7 +424,7 @@ class SoccerRoom {
     cx += mx * 3.2; cy += my * 3.2;
     cx = clamp(cx, C.X0 + 4, C.X1 - 4); cy = clamp(cy, C.Y0 + 4, C.Y1 - 4);
     if (r.kind === RS.THROW) { cx = r.spot[0] < C.CX ? Math.max(cx, r.spot[0] + 12) : Math.min(cx, r.spot[0] - 12); }
-    const R = r.kind === RS.THROW ? 190 : 320;
+    const R = r.kind === RS.THROW ? 190 : r.kind === RS.FREEKICK ? 300 : 320;
     const d = Math.hypot(cx - tk.x, cy - tk.y);
     if (d > R) { cx = tk.x + (cx - tk.x) * R / d; cy = tk.y + (cy - tk.y) * R / d; }
     r.cross = [cx, cy];
@@ -433,7 +440,7 @@ class SoccerRoom {
     if (h) {
       const i = h.input;
       const mx = ((i & IN.RIGHT) ? 1 : 0) - ((i & IN.LEFT) ? 1 : 0), my = ((i & IN.DOWN) ? 1 : 0) - ((i & IN.UP) ? 1 : 0);
-      if (r.cross && (kind === RS.THROW || kind === RS.CORNER)) { crossD = Math.hypot(r.cross[0] - p.x, r.cross[1] - p.y); [dx, dy] = norm(r.cross[0] - p.x, r.cross[1] - p.y); }
+      if (r.cross && (kind === RS.THROW || kind === RS.CORNER || kind === RS.FREEKICK)) { crossD = Math.hypot(r.cross[0] - p.x, r.cross[1] - p.y); [dx, dy] = norm(r.cross[0] - p.x, r.cross[1] - p.y); }
       else if (mx || my) [dx, dy] = norm(mx, my);
     }
     const mates = this.sidePlayers(p.side).filter((t) => t !== p);
@@ -468,6 +475,24 @@ class SoccerRoom {
       const sp = crossD ? clamp(crossD * 1.25, 150, 260) : h ? 150 + power * 130 : clamp(d * 1.25, 150, 260);
       this.rs = null; this.setState(ST.PLAY);
       this.kickBall(p, dx, dy, sp, 150 + power * 80, EV.KICK, h);
+      return;
+    }
+    if (kind === RS.FREEKICK) {
+      const gy = this.oppY(p.side), gd = Math.hypot(C.CX - p.x, gy - p.y);
+      if (h && dx !== undefined) {
+        this.rs = null; this.setState(ST.PLAY);
+        this.kickBall(p, dx, dy, clamp(crossD * 1.3, 110, 270), 40 + power * 110, EV.KICK, h);
+      } else if (gd < 270) {
+        const [ax, ay] = norm(C.CX + rnd(-22, 22) - p.x, gy - p.y);
+        this.rs = null; this.setState(ST.PLAY);
+        this.shoot(p, ax, ay, 0.6 + Math.random() * 0.4, null);
+      } else {
+        const f = this.att(p.side);
+        const t = mates.filter((q) => !q.goalie && (q.y - p.y) * f > 20).sort((a, c) => dist(p, a) - dist(p, c))[0] || mates[5];
+        [dx, dy] = aimAt(t);
+        this.rs = null; this.setState(ST.PLAY);
+        this.kickBall(p, dx, dy, clamp(dist(p, t) * 1.4, 120, 230), 0, EV.KICK, null);
+      }
       return;
     }
     // goal kick: the keeper hoofs it up the pitch
@@ -524,8 +549,10 @@ class SoccerRoom {
     const ps = this.pl;
     for (let i = 0; i < 22; i++) {
       const a = ps[i];
+      if (a.out) continue;
       for (let j = i + 1; j < 22; j++) {
         const b = ps[j];
+        if (b.out) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         if (Math.abs(dx) > 7 || Math.abs(dy) > 7) continue;
         const d = Math.hypot(dx, dy) || 0.01;
@@ -550,6 +577,8 @@ class SoccerRoom {
       b.x += (tx - b.x) * 0.7; b.y += (ty - b.y) * 0.7;
       b.vx = o.vx; b.vy = o.vy; b.vz = 0;
       b.z = (this.state === ST.RESTART && this.rs && this.rs.kind === RS.THROW) || (o.goalie && o.hold > 0) ? 16 : 0;
+      // carried over the line: out of play, whoever is holding it
+      if (live && this.state === ST.PLAY && (b.x < C.X0 || b.x > C.X1 || b.y < C.Y0 || b.y > C.Y1)) { b.last = o; b.owner = null; this.boundaries(); }
       return;
     }
     const dt = C.DT / C.SUB;
@@ -674,7 +703,7 @@ class SoccerRoom {
           if (p.tkCool > 0 || p.stun > 0 || p.act === ACT.DOWN) continue;
           const d = dist(p, o);
           if (p.act === ACT.SLIDE) {
-            if (d < 12) { this.winBall(p, o, true); break; }
+            if (d < 12) { if (!o.goalie && this.checkFoul(p, o)) break; this.winBall(p, o, true); break; }
           } else if (d < 8.5 && !o.goalie) {
             p.tkCool = 12;
             const dribble = Math.hypot(o.vx, o.vy) / C.RUN;
@@ -693,7 +722,7 @@ class SoccerRoom {
     // a loose ball: the nearest player in reach takes it (or the ball runs on)
     let best = null, bd = 1e9;
     for (const p of this.pl) {
-      if (p.noPick > 0 || p.act === ACT.DOWN) continue;
+      if (p.out || p.noPick > 0 || p.act === ACT.DOWN) continue;
       const reach = p.goalie ? (p.act === ACT.DIVE ? 21 : 13) : p.act === ACT.SLIDE ? 13 : 9;
       const zmax = p.goalie ? 30 : p.act === ACT.SLIDE ? 6 : 17;
       if (b.z > zmax) continue;
@@ -720,6 +749,50 @@ class SoccerRoom {
       b.vx *= 0.45; b.vy *= 0.45; b.vx += p.vx * 0.3; b.vy += p.vy * 0.3; b.last = p; p.noPick = 5; return;
     }
     b.owner = p; b.last = p; b.vz = 0; b.curveT = 0; p.hold = 0; p.holdT = 0;
+  }
+
+  // a slide tackle that took the man rather than the ball
+  checkFoul(p, o) {
+    const [ox, oy] = norm(o.vx || DX[o.dir], o.vy || DY[o.dir]);
+    const behind = p.sdx * ox + p.sdy * oy > 0.4;
+    if (Math.random() > (behind ? 0.75 : 0.3)) return false;
+    const b = this.ball;
+    b.owner = null; b.vx = b.vy = b.vz = 0; b.z = 0; b.x = o.x; b.y = o.y; b.last = p;
+    o.act = ACT.DOWN; o.actT = 26; o.vx = o.vy = 0; o.noPick = 10;
+    p.act = ACT.RUN; p.actT = 0; p.vx = p.vy = 0; p.stun = 30;
+    this.event(EV.FOUL, p.side);
+    const r = Math.random();
+    let card = 0;
+    if (r < (behind ? 0.1 : 0.02)) card = 2;
+    else if (r < (behind ? 0.5 : 0.18)) card = 1;
+    if (card === 1) { p.yellow++; if (p.yellow >= 2) card = 2; }
+    if (card) {
+      this.event(card === 1 ? EV.YELLOW : EV.RED, p.id);
+      this.cardT = 70; this.cardSpot = [o.x, o.y];
+      p.frozen = 70;
+      if (card === 2) p.sendOff = true;
+    }
+    const sx = clamp(o.x, C.X0 + 12, C.X1 - 12), sy = clamp(o.y, C.Y0 + 14, C.Y1 - 14);
+    const taker = this.sidePlayers(o.side).filter((q) => !q.goalie && q !== o && q.act !== ACT.DOWN).sort((a, c) => Math.hypot(a.x - sx, a.y - sy) - Math.hypot(c.x - sx, c.y - sy))[0] || o;
+    this.startRestart(RS.FREEKICK, o.side, [sx, sy], taker);
+    this.rs.wait += card ? 70 : 20;
+    return true;
+  }
+
+  stepRef() {
+    const R = this.ref, b = this.ball;
+    if (this.cardT > 0) this.cardT--;
+    let tx, ty;
+    if (this.cardT > 0 && this.cardSpot) { tx = this.cardSpot[0] + 22; ty = this.cardSpot[1] + 6; }
+    else { tx = b.x + 34; ty = b.y + 26; if (b.x > C.CX + 60) tx = b.x - 34; }
+    tx = clamp(tx, C.X0 - 4, C.X1 + 4); ty = clamp(ty, C.Y0 - 10, C.Y1 + 10);
+    const dx = tx - R.x, dy = ty - R.y, d = Math.hypot(dx, dy);
+    if (d > 4) { const sp = Math.min(95, d * 3); R.vx = dx / d * sp; R.vy = dy / d * sp; } else { R.vx *= 0.5; R.vy *= 0.5; }
+    R.x += R.vx * C.DT; R.y += R.vy * C.DT;
+    if (this.cardT > 0 && d < 10) { R.act = ACT.CHEER; R.vx = R.vy = 0; R.dir = dirOf(this.cardSpot[0] - R.x, this.cardSpot[1] - R.y); }
+    else { R.act = 0; R.dir = dirOf(b.x - R.x, b.y - R.y); }
+    const spd = Math.hypot(R.vx, R.vy);
+    if (spd > 12) { R.animAcc += spd * C.DT; if (R.animAcc > 5.5) { R.animAcc = 0; R.anim = (R.anim + 1) & 3; } } else R.anim = 0;
   }
 
   winBall(p, o, slide) {
@@ -833,7 +906,7 @@ class SoccerRoom {
       }
     }
     if (p.side !== r.team) {                         // keep clear of the ball
-      const d = Math.hypot(tx - r.spot[0], ty - r.spot[1]), min = r.kind === RS.KICKOFF ? 48 : 38;
+      const d = Math.hypot(tx - r.spot[0], ty - r.spot[1]), min = r.kind === RS.KICKOFF ? 48 : r.kind === RS.FREEKICK ? 52 : 38;
       if (d < min) { const [nx, ny] = norm(tx - r.spot[0] || 1, ty - r.spot[1] || 1); tx = r.spot[0] + nx * min; ty = r.spot[1] + ny * min; }
     }
     if (r.kind === RS.GOALKICK) { /* both sides spread: formation shifted by the ball at the spot */ }
@@ -925,7 +998,8 @@ class SoccerRoom {
     const b = this.ball;
     const bx = clamp(b.x, 128, C.W - 128), by = clamp(b.y, 96, C.H - 96);
     const out = [];
-    for (const p of this.pl) {
+    for (const p of this.pl.concat([this.ref])) {
+      if (p.out) continue;
       if (p.id !== ctlId && (Math.abs(p.x - bx) > 128 + 30 || Math.abs(p.y - by) > 96 + 30)) continue;
       const st = (p.dir & 7) | ((p.act & 7) << 3) | ((p.anim & 3) << 6);
       const v = (q) => clamp(Math.round(q * C.DT / 2 * 8), -127, 127);
