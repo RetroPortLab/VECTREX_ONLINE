@@ -369,6 +369,15 @@
     }
     if (bv.evlast === null) { bv.evlast = 0; for (const e of m.ev || []) bv.evlast = e[0]; }
   }
+  // BRAWLNET: {t:"wsn"} every tick: the camera, the heroes, enemies, items, shots and the boss's health.
+  const wv = { snap: null, at: 0, heroes: new Map(), ens: new Map(), last: 0 };
+  function onWsn(m) {
+    if (m.room !== room) return;
+    wv.snap = m; wv.at = performance.now();
+    const t = performance.now();
+    const keep = (map, rows, ix) => { const seen = new Set(); for (const r of rows || []) { seen.add(r[0]); const o = map.get(r[0]) || { x: r[ix], y: r[ix + 1], z: r[ix + 2] }; o.tx = r[ix]; o.ty = r[ix + 1]; o.tz = r[ix + 2]; o.row = r; map.set(r[0], o); } for (const k of [...map.keys()]) if (!seen.has(k)) map.delete(k); };
+    keep(wv.heroes, m.hs, 2); keep(wv.ens, m.en, 2);
+  }
   // FRAGNET: {t:"fmap"} once (the arena), {t:"fsn"} every tick: pilots, bolts, health packs, the clock, events.
   const fv = { map: null, pilots: new Map(), bolts: new Map(), items: 15, st: 0, cd: 0, clock: 0, fl: 15, win: 0, tick: 60, at: 0, evlast: null, fx: [], rails: [], mapName: '', last: 0, flashAt: 0, flashTxt: '' };
   function onFmap(m) { if (m.room === room) { fv.map = m.map; fv.mapName = m.name || ''; } }
@@ -455,6 +464,7 @@
       else if (m.t === 'ast') onAst(m);
       else if (m.t === 'bsn') onBsn(m);
       else if (m.t === 'fsn') onFsn(m);
+      else if (m.t === 'wsn') onWsn(m);
       else if (m.t === 'fmap') onFmap(m);
       else if (m.t === 'sev') onSev(m);
       else if (m.t === 'cyc') onCyc(m);
@@ -499,13 +509,13 @@
     for (const r of rs) {
       const b = document.createElement('button');
       b.className = 'chip' + (r.name === room ? ' on' : '');
-      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : r.type === 'rocks' ? `${r.name} <small>${r.players.length}/8 ☄</small>` : r.type === 'ball' ? `${r.name} <small>${r.players.length}/6 ●</small>` : r.type === 'fragnet' ? `${r.name} <small>${r.players.length}/6 ✚</small>` : `${r.name} <small>${r.players.length}/2</small>`;
+      b.innerHTML = r.type === 'strike' ? `${r.name} <small>${r.players.length}/20 ✦</small>` : r.type === 'cycles' ? `${r.name} <small>${r.players.length}/16 ◆</small>` : r.type === 'rocks' ? `${r.name} <small>${r.players.length}/8 ☄</small>` : r.type === 'ball' ? `${r.name} <small>${r.players.length}/6 ●</small>` : r.type === 'fragnet' ? `${r.name} <small>${r.players.length}/6 ✚</small>` : r.type === 'brawlnet' ? `${r.name} <small>${r.players.length}/2 ✊</small>` : `${r.name} <small>${r.players.length}/2</small>`;
       b.onclick = () => watch(r.name);
       $('rooms').appendChild(b);
     }
     const cur = rs.find((r) => r.name === room);
     const players = cur ? cur.players : [];
-    mode = cur && (cur.type === 'strike' || cur.type === 'cycles' || cur.type === 'rocks' || cur.type === 'ball' || cur.type === 'fragnet') ? cur.type : 'netlink';
+    mode = cur && (cur.type === 'strike' || cur.type === 'cycles' || cur.type === 'rocks' || cur.type === 'ball' || cur.type === 'fragnet' || cur.type === 'brawlnet') ? cur.type : 'netlink';
     document.querySelector('.screen').style.aspectRatio = mode === 'ball' ? '16 / 10' : '1 / 1';
     $('howGame').innerHTML = mode === 'strike'
       ? 'Build <b>VEC STRIKE</b> onto the cart (<b>netstrike</b> in WSL), start it from the multicart menu, plug in its USB.'
@@ -517,6 +527,8 @@
           ? 'Build <b>VECTOR BALL</b> onto the cart (<b>netboost</b> in WSL), start it from the multicart menu, plug in its USB.'
         : mode === 'fragnet'
           ? 'Run <b>FRAGNET.NEX</b> on a ZX Spectrum Next with its Wi-Fi set up; it joins through the Next gateway.'
+        : mode === 'brawlnet'
+          ? 'Run <b>BRAWLNET.NEX</b> on a ZX Spectrum Next with its Wi-Fi set up; it joins through the Next gateway.'
         : 'Upload <b>netlink_test</b> to the UVMC2 with <i>Build → Upload to Cartridge</i>, then stop any debug session.';
     $('howSim').innerHTML = mode === 'strike'
       ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Add bots above: they fly by the same rules.'
@@ -528,14 +540,17 @@
           ? 'Or run the <b>Vectrex Netlink</b> app with this room. Alone? Bots fill each side to at least two cars.'
         : mode === 'fragnet'
           ? 'Alone? Bots fill the arena to four pilots.'
+        : mode === 'brawlnet'
+          ? 'One Next plays solo; a second one joins the same street at any time.'
         : 'No hardware yet? Add <b>--sim</b> for a pretend console.';
     $('legend').style.display = mode === 'netlink' ? '' : 'none';
-    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : mode === 'ball' ? 'VECTOR BALL pitch' : mode === 'fragnet' ? 'FRAGNET arena (from above)' : '-127 … 127';
+    $('screenNote').textContent = mode === 'strike' ? 'VEC STRIKE arena' : mode === 'cycles' ? 'LIGHT CYCLES grid' : mode === 'rocks' ? 'CO-OP ASTEROIDS field' : mode === 'ball' ? 'VECTOR BALL pitch' : mode === 'fragnet' ? 'FRAGNET arena (from above)' : mode === 'brawlnet' ? 'BRAWLNET street (side view)' : '-127 … 127';
     if (mode === 'strike') return renderStrike(cur);
     if (mode === 'cycles') return renderCycles(cur);
     if (mode === 'rocks') return renderRocks(cur);
     if (mode === 'ball') return renderBall(cur);
     if (mode === 'fragnet') return renderFrag(cur);
+    if (mode === 'brawlnet') return renderBrawl(cur);
     const bySlot = { 1: players.find((p) => p.slot === 1), 2: players.find((p) => p.slot === 2) };
     $('players').innerHTML = [1, 2].map((s) => card(s, bySlot[s])).join('');
     for (const s of [1, 2]) if (live[s] && bySlot[s]) drawIO(s, live[s]);
@@ -678,6 +693,64 @@
     drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
   }
 
+  function renderBrawl(r) {
+    for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = false; }
+    const humans = r.players;
+    const rows = r.players.map((p, i) => {
+      const link = `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 10 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>${kickBtn(p)}`;
+      const state = !p.inGame ? 'title screen' : p.lives <= 0 && !p.alive ? 'out' : `${Math.round(p.hp)} hp · ${p.lives} lives${p.weapon !== 'none' ? ' · ' + esc(p.weapon) : ''}`;
+      return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.score ? 'lead' : ''}">
+        <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
+        <td class="num">${p.score}</td><td class="num">${p.kills}</td><td>${link}</td><td style="color:var(--dim)">${state}</td></tr>`;
+    }).join('');
+    const sn = wv.snap;
+    const stateName = ['waiting for fighters', 'get ready', 'fighting', 'stage clear', 'game over', 'victory'][r.state] || '';
+    $('players').innerHTML = `<section class="panel strike">
+      <div class="bar"><span class="title">brawlnet</span><span class="round">${stateName}${sn && sn.sname ? ' · ' + esc(sn.sname) : ''}</span></div>
+      <div class="board-wrap"><table class="board"><thead><tr><th>#</th><th>Fighter</th><th class="num">Score</th><th class="num">KOs</th><th>Link</th><th>Now</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="color:var(--dim);padding:18px 10px">Nobody here yet. Start BRAWLNET on a Next in this room.</td></tr>'}</tbody></table></div></section>`;
+    $('e2e').innerHTML = `${humans.length} <small>consoles</small>`;
+    $('e2eFrames').innerHTML = `${r.stage + 1}/${r.stages || 3} <small>stage</small>`;
+    $('relayed').textContent = humans.reduce((n, p) => n + (p.inHz || 0), 0) || '–';
+    $('linkNote').textContent = humans.length ? 'RTT of each console to the relay' : 'no consoles yet';
+    document.querySelector('.summary div:nth-child(1) dt').textContent = 'Consoles';
+    document.querySelector('.summary div:nth-child(2) dt').textContent = 'Stage';
+    document.querySelector('.summary div:nth-child(3) dt').textContent = 'Console updates / s';
+    $('uptime').textContent = stats ? fmtDur(stats.uptime) : '–';
+    drawChartSeries(humans.slice(0, 8).map((p) => ({ c: hue(p.slot), pts: p.rttHist || [] })));
+  }
+
+  const BR_EN = ['#9fb0c8', '#e0b060', '#c87050', '#e060a0', '#ff6a3c', '#6ee7ff', '#ffe27a', '#b07040'];
+  const BR_IT = ['#ff6060', '#ffc070', '#7aff9a', '#ffe27a', '#d0d8e8', '#9aa6b8', '#c89060', '#ff8cff'];
+  function drawBrawl(d, now, w, h) {
+    const sn = wv.snap;
+    if (!sn || !sn.width) { sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center'; sctx.fillText('waiting for a street in room "' + room + '"', w / 2, h / 2); sctx.textAlign = 'start'; return; }
+    const dt = Math.min(64, now - (wv.last || now)); wv.last = now;
+    const ease = 1 - Math.exp(-dt / 60);
+    for (const map of [wv.heroes, wv.ens]) for (const o of map.values()) { o.x += (o.tx - o.x) * ease; o.y += (o.ty - o.y) * ease; o.z += (o.tz - o.z) * ease; }
+    // the whole street, squeezed to the width; the camera's window on it
+    const W = sn.width, S = (w - 24 * d) / W, ox = 12 * d, top = h * 0.22, bot = h * 0.62, dep = 48;
+    const X = (x) => ox + x * S, Y = (y, z) => top + (y / dep) * (bot - top) - (z || 0) * S * 2;
+    sctx.fillStyle = '#ffffff10'; sctx.fillRect(ox, top - 6 * d, W * S, bot - top + 18 * d);
+    sctx.strokeStyle = '#ffffff30'; sctx.lineWidth = d; sctx.strokeRect(ox, top - 6 * d, W * S, bot - top + 18 * d);
+    sctx.strokeStyle = '#ffe27a'; sctx.lineWidth = 2 * d; sctx.strokeRect(X(sn.cam), top - 10 * d, 256 * S, bot - top + 26 * d);
+    if (sn.lim < W - 256) { sctx.strokeStyle = '#ff6a3c88'; shape(sctx, [[X(sn.lim + 256), top - 10 * d], [X(sn.lim + 256), bot + 16 * d]]); }
+    const dot = (x, y, z, c, r, label) => {
+      sctx.fillStyle = '#00000055'; sctx.beginPath(); sctx.ellipse(X(x), Y(y), r, r * 0.4, 0, 0, Math.PI * 2); sctx.fill();
+      sctx.fillStyle = c; sctx.shadowColor = c; sctx.shadowBlur = 6 * d; sctx.beginPath(); sctx.arc(X(x), Y(y, z) - r, r, 0, Math.PI * 2); sctx.fill(); sctx.shadowBlur = 0;
+      if (label) { sctx.fillStyle = '#fff'; sctx.font = `${9 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center'; sctx.fillText(label, X(x), Y(y, z) - r * 2 - 3 * d); sctx.textAlign = 'start'; }
+    };
+    for (const it of sn.it || []) dot(it[2], it[3], it[4], BR_IT[it[1]] || '#fff', 3 * d);
+    for (const o of wv.ens.values()) { const ty = o.row[1] >> 4, st = o.row[1] & 15; if (st === 6) continue; const big = ty >= 4 && ty <= 6;
+      dot(o.x, o.y, o.z, st === 4 ? '#555a66' : BR_EN[ty] || '#fff', (big ? 6 : ty === 7 ? 4 : 4) * d, big ? 'BOSS' : ''); }
+    for (const pr of sn.pr || []) dot(pr[2], pr[3], pr[4], pr[1] === 1 ? '#6ee7ff' : '#d0d8e8', 2.5 * d);
+    for (const o of wv.heroes.values()) dot(o.x, o.y, o.z, hue(o.row[0]), 5 * d, sv.names[o.row[0]] || '');
+    // the boss's health, the stage and the camera
+    sctx.fillStyle = '#c9d4e0'; sctx.font = `${11 * d}px IBM Plex Mono, monospace`;
+    sctx.fillText(`${sn.sname || ''}  wave ${sn.wave}${sn.go ? '  GO →' : ''}`, 12 * d, 20 * d);
+    if (sn.boss) { sctx.strokeStyle = '#ff6a3c'; sctx.strokeRect(12 * d, h - 30 * d, w - 24 * d, 10 * d); sctx.fillStyle = '#ff6a3c'; sctx.fillRect(12 * d, h - 30 * d, (w - 24 * d) * sn.boss / 255, 10 * d); }
+  }
+
   function renderCycles(r) {
     for (const p of r.players) { sv.names[p.slot] = p.name; sv.bots[p.slot] = p.bot; }
     const humans = r.players.filter((p) => !p.bot), nb = r.players.length - humans.length;
@@ -772,6 +845,7 @@
     if (mode === 'rocks') { drawRocks(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     if (mode === 'ball') { drawBall(sx, sy, k, d, now, w, h); requestAnimationFrame(frame); return; }
     if (mode === 'fragnet') { drawFrag(d, now, w, h); requestAnimationFrame(frame); return; }
+    if (mode === 'brawlnet') { drawBrawl(d, now, w, h); requestAnimationFrame(frame); return; }
     for (const slot of [1, 2]) {
       const p = live[slot];
       if (!p) continue;
