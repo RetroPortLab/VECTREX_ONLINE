@@ -15,7 +15,7 @@
 const TICK_MS = 50;
 const C = {
   HUMANS: 2, DEPTH: 55, GRAV: 1.5, HERO_HP: 100, LIVES: 3,
-  RESPAWN: 50, INTRO: 70, CLEAR: 110, OVER: 120, VICTORY: 160,
+  RESPAWN: 50, INTRO: 70, CLEAR: 110, OVER: 120, VICTORY: 160, CONT: 190,
   EXTRA_LIFE: 20000, FOOD_TICKS: 500, MAXE: 8, MAXI: 6, MAXP: 4,
 };
 const TEST = !!process.env.BRAWL_TEST;
@@ -26,8 +26,8 @@ const ES = { IDLE: 0, WALK: 1, ATK: 2, HURT: 3, DOWN: 4, GETUP: 5, DEAD: 6, AIR:
 const HA = { IDLE: 0, WALK: 1, JAB1: 2, JAB2: 3, HOOK: 4, JUMP: 5, JKICK: 6, SPECIAL: 7, SWING: 8, HURT: 9, DOWN: 10, GETUP: 11, DEAD: 12, PICK: 13 };
 const IT = { APPLE: 0, CHICKEN: 1, CASH: 2, GOLD: 3, KNIFE: 4, PIPE: 5, BAT: 6, ONEUP: 7 };
 const EV = { HIT: 1, HEAVY: 2, KO: 3, DIE: 4, PICKUP: 5, BREAK: 6, WBREAK: 7, SPAWN: 8, CLEARED: 9, GO: 10, STAGE: 11, SCLEAR: 12,
-  BOSS: 13, BOSSDOWN: 14, OVER: 15, WIN: 16, HURT: 17, HDOWN: 18, THROW: 19, SLAM: 20, ONEUP: 21, SWING: 22, JOIN: 23, LEAVE: 24, SPECIAL: 25 };
-const ST = { LOBBY: 0, INTRO: 1, PLAY: 2, CLEAR: 3, OVER: 4, WIN: 5 };
+  BOSS: 13, BOSSDOWN: 14, OVER: 15, WIN: 16, HURT: 17, HDOWN: 18, THROW: 19, SLAM: 20, ONEUP: 21, SWING: 22, JOIN: 23, LEAVE: 24, SPECIAL: 25, CONT: 26 };
+const ST = { LOBBY: 0, INTRO: 1, PLAY: 2, CLEAR: 3, OVER: 4, WIN: 5, CONT: 6 };
 const WP = { NONE: 0, KNIFE: 1, PIPE: 2, BAT: 3 };
 // knife: quick, and a quarter of its cuts are criticals (double damage); pipe: reach, and it breaks
 // through a bruiser's armour; bat: a wide sweep that always sends them flying. Land three weapon swings
@@ -685,7 +685,25 @@ class BrawlRoom {
     this.setState(ST.CLEAR);
   }
 
-  gameOver() { this.event(EV.OVER); this.setState(ST.OVER); }
+  // every life is gone: if anyone is still plugged in, a ten second countdown to continue (fire), else the end
+  gameOver() {
+    if (this.humans.some((p) => p.inGame)) { for (const p of this.humans) p.fireWas = true; this.setState(ST.CONT); return; }
+    this.finalOver();
+  }
+  finalOver() { this.event(EV.OVER); this.setState(ST.OVER); }
+
+  // fire in the countdown: everyone is back on their feet with three lives (and the score starts again)
+  doContinue() {
+    for (const p of this.humans) {
+      if (!p.inGame) continue;
+      Object.assign(p, { inRun: true, lives: C.LIVES, score: 0, nextLife: C.EXTRA_LIFE, hp: C.HERO_HP, weapon: 0, wdur: 0, kills: 0, hits: 0 });
+      this.spawnHero(p, this.cam + 40 + (p.id - 1) * 20, 26 + rnd(10), false);
+    }
+    this.ranked = false;
+    this.rosterDirty = true;
+    this.event(EV.CONT);
+    this.setState(ST.PLAY);
+  }
 
   // ---- the clock -----------------------------------------------------------------------------------------------
   step() {
@@ -715,6 +733,13 @@ class BrawlRoom {
         if (this.stageNo >= STAGES.length) { this.event(EV.WIN); this.setState(ST.WIN); }
         else this.beginStage();
       }
+    } else if (this.state === ST.CONT) {
+      for (const p of this.humans) {
+        const fire = (p.input & 8) !== 0;
+        if (p.inGame && fire && !p.fireWas && this.stateTicks > 12) { this.doContinue(); break; }
+        p.fireWas = fire;
+      }
+      if (this.state === ST.CONT && this.stateTicks >= C.CONT) this.finalOver();
     } else if (this.state === ST.OVER) {
       for (const e of this.enemies) this.stepEnemy(e);
       if (this.stateTicks >= C.OVER) this.endRun(false);
@@ -728,7 +753,7 @@ class BrawlRoom {
 
   joinLate() {
     for (const p of this.humans) {
-      if (p.inGame && !p.inRun && this.state !== ST.OVER && this.state !== ST.WIN) {
+      if (p.inGame && !p.inRun && this.state !== ST.OVER && this.state !== ST.WIN && this.state !== ST.CONT) {
         Object.assign(p, { inRun: true, lives: C.LIVES, score: 0, nextLife: C.EXTRA_LIFE, hp: C.HERO_HP, weapon: 0, wdur: 0 });
         this.spawnHero(p, this.cam + 40, 30, false);
         this.ranked = false;
