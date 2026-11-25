@@ -29,10 +29,14 @@ const EV = { HIT: 1, HEAVY: 2, KO: 3, DIE: 4, PICKUP: 5, BREAK: 6, WBREAK: 7, SP
   BOSS: 13, BOSSDOWN: 14, OVER: 15, WIN: 16, HURT: 17, HDOWN: 18, THROW: 19, SLAM: 20, ONEUP: 21, SWING: 22, JOIN: 23, LEAVE: 24, SPECIAL: 25 };
 const ST = { LOBBY: 0, INTRO: 1, PLAY: 2, CLEAR: 3, OVER: 4, WIN: 5 };
 const WP = { NONE: 0, KNIFE: 1, PIPE: 2, BAT: 3 };
+// knife: quick, and a quarter of its cuts are criticals (double damage); pipe: reach, and it breaks
+// through a bruiser's armour; bat: a wide sweep that always sends them flying. Land three weapon swings
+// within a second and a half and the third is a finisher: half again the damage and a knock-down.
+const FINISH_WINDOW = 75;
 const WEAPON = [null,
-  { dmg: 10, reach: 32, kd: false, dur: 7 },
-  { dmg: 15, reach: 40, kd: false, dur: 9 },
-  { dmg: 20, reach: 44, kd: true, dur: 8 }];
+  { dmg: 12, reach: 34, kd: false, dur: 10, wide: 11, crit: 4 },
+  { dmg: 16, reach: 42, kd: false, dur: 12, wide: 11, pierce: true },
+  { dmg: 22, reach: 46, kd: true, dur: 9, wide: 17 }];
 
 // enemy kinds. hp, walk speed (px per tick), attacks: windup/active/recover ticks, reach, damage, knock-down, lunge speed
 const TYPES = [
@@ -132,7 +136,7 @@ class BrawlRoom {
       id, name, ws: null, ip: '', userId: null,
       inGame: false, inRun: false, hs: 0, ht: 0, alive: false,
       x: 40, y: 28, z: 0, face: 0, act: 0, atkSeq: 0, hp: C.HERO_HP, lives: C.LIVES, score: 0, nextLife: C.EXTRA_LIFE,
-      weapon: 0, wdur: 0, inv: 0, fix: 0, fixAck: 0, lastMoveAt: 0, vx: 0, vz: 0, hitCount: 0, hitReset: 0, respT: 0,
+      weapon: 0, wdur: 0, wcn: 0, wct: -999, inv: 0, fix: 0, fixAck: 0, lastMoveAt: 0, vx: 0, vz: 0, hitCount: 0, hitReset: 0, respT: 0,
       atk: null, input: 0, flash: 0, kills: 0, hits: 0, specialUsed: false,
       since: Date.now(), inCount: 0, inHz: 0, rtt: null, rttHist: [], pings: new Map(), bstat: null, lastMsg: 0, frame: 0, fl: 0,
     };
@@ -507,11 +511,13 @@ class BrawlRoom {
     if (age > A.t1) { p.atk = null; return; }
     if (A.air && p.z < 3) return;
     if (A.cost && !at.paid) { at.paid = true; if (p.hp > A.cost + 1) { p.hp -= A.cost; p.flash = 2; } this.event(EV.SPECIAL, p.x, p.y, p.z, p.id); }
-    let dmg = A.dmg, reach = A.reach, kd = A.kd, both = A.both;
+    let dmg = A.dmg, reach = A.reach, kd = A.kd, both = A.both, wide = 11, pierce = false, heavy = false;
     if (A.weapon) {
       const W = WEAPON[at.weapon];
       if (!W || p.weapon !== at.weapon) return;
-      dmg = W.dmg; reach = W.reach; kd = W.kd;
+      dmg = W.dmg; reach = W.reach; kd = W.kd; wide = W.wide; pierce = !!W.pierce;
+      if (at.fin === undefined) at.fin = p.wcn >= 2 && this.tick - p.wct <= FINISH_WINDOW;   // the third swing in a string
+      if (at.fin) { dmg = Math.round(dmg * 1.5); kd = true; heavy = true; }
     }
     dmg = Math.round(dmg * HERO_DMG[(p.id - 1) % 2]);
     const dir = p.face ? -1 : 1;
@@ -522,16 +528,23 @@ class BrawlRoom {
       const dx = e.x - p.x;
       const front = both ? Math.abs(dx) : dx * dir;
       const rr = e.type >= ET.BOSS1 ? reach + 6 : reach;
-      if (front > -10 && front < rr && Math.abs(e.y - p.y) < (both ? 18 : 11) && Math.abs(e.z - p.z) < 30) {
+      if (front > -10 && front < rr && Math.abs(e.y - p.y) < (both ? 18 : wide) && Math.abs(e.z - p.z) < 30) {
         at.hit.add(e.id);
-        this.hitEnemy(e, p, dmg, kd, dx >= 0 ? 1 : -1, both ? 1 : 0);
+        let d = dmg, hv = heavy;
+        if (A.weapon && WEAPON[at.weapon].crit && !at.fin && rnd(WEAPON[at.weapon].crit) === 0) { d *= 2; hv = true; }   // a knife's critical
+        this.hitEnemy(e, p, d, kd, dx >= 0 ? 1 : -1, both ? 1 : 0, pierce, hv);
         any = true;
       }
+    }
+    if (any && A.weapon && !at.counted) {                  // a swing that landed counts towards the string
+      at.counted = true;
+      if (at.fin) p.wcn = 0; else { p.wcn = this.tick - p.wct <= FINISH_WINDOW ? (p.wcn || 0) + 1 : 1; }
+      p.wct = this.tick;
     }
     if (any && A.weapon && --p.wdur <= 0) { this.event(EV.WBREAK, p.x, p.y, p.z, p.weapon); p.weapon = 0; p.wdur = 0; }
   }
 
-  hitEnemy(e, p, dmg, kd, dir, aoe) {
+  hitEnemy(e, p, dmg, kd, dir, aoe, pierce, heavy) {
     const T = TYPES[e.type];
     p.hits++;
     e.hp -= dmg;
@@ -541,7 +554,7 @@ class BrawlRoom {
       if (e.hp <= 0) { this.breakBarrel(e); return; }
       e.st = ES.HURT; e.t = 0; this.event(EV.HIT, e.x, e.y, 12, 0); return;
     }
-    this.event(kd ? EV.HEAVY : EV.HIT, e.x, e.y, e.z + 20, e.type);
+    this.event(kd || heavy ? EV.HEAVY : EV.HIT, e.x, e.y, e.z + 20, e.type);
     if (e.hp <= 0) {
       e.hp = 0; e.st = ES.DEAD; e.t = 0; e.vx = dir * 3.5; e.vz = 6; e.atk = 0;
       p.score += T.score; p.kills++;
@@ -552,7 +565,7 @@ class BrawlRoom {
       return;
     }
     e.combo++;
-    const armored = (T.armor || 0) > 0 && e.combo <= T.armor && !kd;
+    const armored = (T.armor || 0) > 0 && e.combo <= T.armor && !kd && !pierce;
     if (T.boss) {
       // bosses: flinch a little, go down only at thresholds (a third of their health)
       const frac = e.hp / e.maxhp;
