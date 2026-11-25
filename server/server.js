@@ -392,8 +392,15 @@ async function hello(c, m) {
     const cs = auth.cleanCallsign(name);
     if (cs && (await store.callsignOwner(cs).catch(() => null))) name = ('G' + cs).slice(0, 8);
   }
-  const rec = openRoom(cleanRoom(m.room), game);
+  let roomName = cleanRoom(m.room), setup = null;
+  if (game.matchmaking && m.mode !== undefined) {              // a console that asks for quick / host / join
+    const mm = game.matchmaking(rooms, m, roomName);
+    if (mm.error) { send(c.ws, { t: 'error', msg: mm.error }); return c.ws.close(); }
+    roomName = mm.room; setup = mm.setup || null;
+  }
+  const rec = openRoom(roomName, game);
   if (rec.error) { send(c.ws, { t: 'error', msg: rec.error }); return c.ws.close(); }
+  if (setup && rec.room.empty && rec.room.setup) rec.room.setup(setup);
   if (banned(rec, c.ip, name)) { send(c.ws, { t: 'error', msg: 'you were removed from this room by an admin a moment ago: try again in a couple of minutes' }); return c.ws.close(); }
   const wasEmpty = !rec.room.info().players.some((q) => !q.bot);
   const p = rec.room.join(c.ws, { name, ip: c.ip, user, cart: m.cart });

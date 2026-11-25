@@ -54,12 +54,23 @@ class SoccerRoom {
     this.cardT = 0; this.cardSpot = null;
     this.events = []; this.evtId = 0;
     this.match = 0; this.ranked = false; this.hadTwo = false;
+    this.opts = { halfS: C.HALF_S, cpu: true, priv: false };     // the match options: set by whoever hosts the room
     this.rosterSeq = 0; this.rosterDirty = true; this.lastRoster = 0;
     this.stats = [{ shots: 0 }, { shots: 0 }];
     this.timer = setInterval(() => this.step(), C.TICK_MS);
   }
 
   close() { clearInterval(this.timer); }
+  // match options from a host: { halfMin, cpu, priv }
+  configure(o) {
+    const m = Math.max(1, Math.min(10, Number(o.halfMin) || 0)) || C.HALF_S / 60;
+    this.opts = { halfS: Math.round(m * 60), cpu: o.cpu !== false, priv: !!o.priv };
+  }
+  // may the match run? (without CPU fill both sides need a console)
+  get ready() {
+    const inG = this.humans.filter((h) => h.inGame);
+    return this.opts.cpu ? inG.length > 0 : inG.length === 2;
+  }
   get humans() { return this.seats.filter(Boolean); }
   get empty() { return this.humans.length === 0; }
   get size() { return this.humans.length; }
@@ -186,8 +197,8 @@ class SoccerRoom {
     this.stateT++;
     for (const h of this.humans) if (h.lastMsg && Date.now() - h.lastMsg > 8000) h.input = 0;
     if (this.state === ST.LOBBY) {
-      if (this.humans.some((h) => h.inGame)) this.beginLineup();
-    } else if (!this.humans.some((h) => h.inGame)) {
+      if (this.ready) this.beginLineup();
+    } else if (!this.ready) {
       this.setState(ST.LOBBY);
       this.rs = null;
     } else {
@@ -232,7 +243,7 @@ class SoccerRoom {
   tickClock() {
     this.clockFrac += C.DT;
     if (this.clockFrac >= 1) { this.clockFrac -= 1; this.clock++; }
-    const limit = this.half * C.HALF_S;
+    const limit = this.half * this.opts.halfS;
     if (this.clock >= limit) {
       if (this.half === 1) { this.event(EV.HALF, 0); this.setState(ST.HALF); this.ball.owner = null; this.rs = null; }
       else { this.event(EV.FULL, 0); this.setState(ST.FULL); this.ball.owner = null; this.rs = null; this.matchOver(); }

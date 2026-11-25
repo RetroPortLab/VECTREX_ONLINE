@@ -30,6 +30,31 @@ const game = {
   profile: [{ key: 'wins', label: 'Wins' }, { key: 'matches', label: 'Matches' }, { key: 'goals', label: 'Goals' }],
 
   createRoom(name, ctx) { return new SoccerGame(name, ctx); },
+
+  // match making, from the console's hello: mode 0 quick match, 1 host (room code, options), 2 join by code
+  matchmaking(rooms, m, code) {
+    const mine = (r) => r && r.game === game;
+    if (m.mode === 2) {
+      const r = rooms.get(code);
+      if (!mine(r) || r.room.size === 0) return { error: 'NO SUCH ROOM: CHECK THE CODE' };
+      return { room: code };
+    }
+    if (m.mode === 1) {
+      const r = rooms.get(code);
+      if (mine(r) && r.room.size > 0) return { error: 'ROOM IN USE: PICK ANOTHER CODE' };
+      return { room: code, setup: { halfMin: m.half, cpu: m.cpu !== 0, priv: true } };
+    }
+    // quick: a public room with one console waiting, else the first free one
+    for (let i = 1; i <= 20; i++) {
+      const name = i === 1 ? 'pitch' : `pitch${i}`, r = rooms.get(name);
+      if (mine(r) && !r.room.br.opts.priv && r.room.size === 1) return { room: name };
+    }
+    for (let i = 1; i <= 20; i++) {
+      const name = i === 1 ? 'pitch' : `pitch${i}`, r = rooms.get(name);
+      if (!r || (mine(r) && r.room.size === 0)) return { room: name, setup: { halfMin: 2, cpu: true, priv: false } };
+    }
+    return { error: 'ALL ROOMS ARE FULL' };
+  },
 };
 
 class SoccerGame {
@@ -47,6 +72,7 @@ class SoccerGame {
   get empty() { return this.br.empty; }
   get humans() { return this.br.humans; }
   get size() { return this.br.size; }
+  setup(o) { this.br.configure(o); }
 
   join(ws, { name, ip, user }) {
     const p = this.br.join(ws, name, ip, user);
