@@ -454,7 +454,7 @@ class SoccerRoom {
         [dx, dy] = aimAt(t);
         if (spotInward(r.spot, dx) < 0) dx = -dx;
       }
-      const sp = crossD ? clamp(60 + crossD * 0.6, 80, 150) : 70 + power * 80;
+      const sp = 62 + power * 100;                                   // hold fire for power; the cross hair gives the direction
       this.rs = null; this.setState(ST.PLAY);
       b.owner = null; b.last = p; b.vx = dx * sp; b.vy = dy * sp; b.vz = 110; b.z = 18; b.curveT = 0;
       p.noPick = 25; p.act = ACT.THROW; p.actT = 6;
