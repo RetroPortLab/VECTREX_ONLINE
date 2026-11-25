@@ -542,6 +542,13 @@ class SoccerRoom {
     if (this.state === ST.RESTART && this.rs && this.rs.taker === p) { p.vx = p.vy = 0; }
     p.x = clamp(p.x + p.vx * C.DT, C.X0 - 16, C.X1 + 16);
     p.y = clamp(p.y + p.vy * C.DT, C.Y0 - 22, C.Y1 + 22);
+    // the goals are solid: nobody runs into the net or through the back of it
+    for (const top of [true, false]) {
+      const yl = top ? C.Y0 : C.Y1, out = top ? p.y < yl : p.y > yl;
+      if (!out || p.x <= C.GL - 3 || p.x >= C.GR + 3) continue;
+      const dy = Math.abs(p.y - yl), dl = p.x - (C.GL - 3), dr = (C.GR + 3) - p.x;
+      if (dy <= dl && dy <= dr) p.y = yl; else if (dl < dr) p.x = C.GL - 3; else p.x = C.GR + 3;
+    }
     const spd = Math.hypot(p.vx, p.vy);
     if (spd > 12) { p.animAcc += spd * C.DT; if (p.animAcc > 5.5) { p.animAcc = 0; p.anim = (p.anim + 1) & 3; } }
     else p.anim = 0;
