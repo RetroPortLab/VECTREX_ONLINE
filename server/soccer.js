@@ -464,6 +464,7 @@ class SoccerRoom {
       const sp = 62 + power * 100;                                   // hold fire for power; the cross hair gives the direction
       this.rs = null; this.setState(ST.PLAY);
       b.owner = null; b.last = p; b.vx = dx * sp; b.vy = dy * sp; b.vz = 110; b.z = 18; b.curveT = 0;
+      b.x = r.spot[0] + (r.spot[0] < C.CX ? 3 : -3); b.y = clamp(r.spot[1], C.Y0 + 6, C.Y1 - 6); b.grace = 8;   // released inside the line, so it can't be called out again
       p.noPick = 25; p.act = ACT.THROW; p.actT = 6;
       this.event(EV.THROW, p.side);
       return;
@@ -475,6 +476,7 @@ class SoccerRoom {
       const sp = crossD ? clamp(crossD * 1.25, 150, 260) : h ? 150 + power * 130 : clamp(d * 1.25, 150, 260);
       this.rs = null; this.setState(ST.PLAY);
       this.kickBall(p, dx, dy, sp, 150 + power * 80, EV.KICK, h);
+      b.grace = 5;
       return;
     }
     if (kind === RS.FREEKICK) {
@@ -609,7 +611,8 @@ class SoccerRoom {
       this.posts();
       if (this.state === ST.GOAL) this.netClamp();
     }
-    if (live && this.state === ST.PLAY) this.boundaries();
+    if (b.grace > 0) b.grace--;
+    else if (live && this.state === ST.PLAY) this.boundaries();
   }
 
   posts() {
