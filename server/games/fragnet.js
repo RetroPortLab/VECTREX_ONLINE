@@ -11,7 +11,7 @@ const { FragRoom, C } = require('../fragnet');
 const game = {
   id: 'fragnet',
   title: 'FRAGNET',
-  tagline: 'First-person deathmatch on the ZX Spectrum Next: plasma bolts, a stone arena under the stars.',
+  tagline: 'First-person deathmatch on the ZX Spectrum Next: rockets, scatter guns, railguns and portals in three arenas.',
   players: 'up to 4 (bots fill the arena)',
   bridgeNames: ['dm'],
   platform: 'ZX Spectrum Next',
@@ -19,12 +19,14 @@ const game = {
   download: null,
   dashboardType: 'fragnet',
   about: [
-    'A textured first-person arena drawn by the Next itself, with a starry sky that turns with you. Run, strafe and fire plasma bolts; five hits and a pilot is fragged, then back in two and a half seconds later at the spawn point furthest from trouble.',
-    `First to ${C.FRAGS} frags wins, or whoever has the most when the ${C.MATCH_S / 60} minutes are up. Health packs in the corners of the courtyard give back ${C.ITEM_HP}.`,
+    'A textured first-person arena drawn by the Next itself, with a starry sky that turns with you. Everyone starts with the plasma rifle; five hits and a pilot is fragged, then back in two and a half seconds at the spawn point furthest from trouble.',
+    'Weapons lie in the arena: a rocket launcher (slow rockets that blow up with a big splash), a scatter gun (six pellets, deadly up close) and a railgun (an instant beam, four-fifths of a pilot in one shot). Each comes with limited ammo, then it is back to plasma. Health packs give back ' + C.ITEM_HP + '.',
+    'Portals glow in pairs: run into one and you come out of its twin. Frags in a row are announced: First Blood, Killing Spree (3), Rampage (5), Unstoppable (7) and Godlike (10).',
+    `Three arenas in turn: ARENA, FOUNDRY and COURTYARD. First to ${C.FRAGS} frags wins, or whoever has the most when the ${C.MATCH_S / 60} minutes are up.`,
     'Bots fill empty places so one Next always has a fight. The Next connects over its Wi-Fi to the Next gateway, which joins it to this server.',
   ],
-  controls: [['O / P (or mouse)', 'turn'], ['Q / A', 'run forward / back'], ['Z / X', 'strafe'], ['Space, M or mouse button', 'fire'],
-    ['Hold S', 'scoreboard'], ['Hold BREAK 1 s', 'quit to the title screen']],
+  controls: [['W / S', 'run forward / back'], ['A / D', 'strafe'], ['O / P (or mouse)', 'turn'], ['Space, M or mouse button', 'fire'],
+    ['Z', 'scoreboard'], ['Hold X', 'quit to the title screen']],
   leaderboard: {
     order: ['wins', 'frags'],
     columns: [{ key: 'wins', label: 'Wins' }, { key: 'matches', label: 'Matches' }, { key: 'frags', label: 'Frags' }, { key: 'deaths', label: 'Deaths' },

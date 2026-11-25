@@ -370,8 +370,8 @@
     if (bv.evlast === null) { bv.evlast = 0; for (const e of m.ev || []) bv.evlast = e[0]; }
   }
   // FRAGNET: {t:"fmap"} once (the arena), {t:"fsn"} every tick: pilots, bolts, health packs, the clock, events.
-  const fv = { map: null, pilots: new Map(), bolts: new Map(), items: 15, st: 0, cd: 0, clock: 0, fl: 15, win: 0, tick: 60, at: 0, evlast: null, fx: [], last: 0, flashAt: 0, flashTxt: '' };
-  function onFmap(m) { if (m.room === room) fv.map = m.map; }
+  const fv = { map: null, pilots: new Map(), bolts: new Map(), items: 15, st: 0, cd: 0, clock: 0, fl: 15, win: 0, tick: 60, at: 0, evlast: null, fx: [], rails: [], mapName: '', last: 0, flashAt: 0, flashTxt: '' };
+  function onFmap(m) { if (m.room === room) { fv.map = m.map; fv.mapName = m.name || ''; } }
   function onFsn(m) {
     if (m.room !== room) return;
     const now = performance.now();
@@ -385,11 +385,11 @@
     }
     for (const id of [...fv.pilots.keys()]) if (!seen.has(id)) fv.pilots.delete(id);
     const bs = new Set();
-    for (const [id, x, y, a, owner] of m.bolts || []) {
+    for (const [id, x, y, a, owner, kind] of m.bolts || []) {
       bs.add(id);
       let b = fv.bolts.get(id);
       if (!b) { b = { dx: x / 256, dy: y / 256 }; fv.bolts.set(id, b); }
-      Object.assign(b, { x: x / 256, y: y / 256, a, owner, at: now });
+      Object.assign(b, { x: x / 256, y: y / 256, a, owner, kind: kind | 0, at: now });
     }
     for (const id of [...fv.bolts.keys()]) if (!bs.has(id)) fv.bolts.delete(id);
     Object.assign(fv, { st: m.st, cd: m.cd, clock: m.clock, fl: m.fl, items: m.items, win: m.win, tick: m.tick_ms || 60, at: now });
@@ -410,6 +410,12 @@
       else if (kind === 7) burst(x, y, 10, 1, '#9dff7a', 500);
       else if (kind === 8) addEvent({ room, ts: Date.now(), msg: 'FIGHT!' });
       else if (kind === 9) addEvent({ room, ts: Date.now(), level: 'warn', msg: `${nameOf(a)} wins the match with ${b} frags` });
+      else if (kind === 11) { burst(x, y, 36, 2.2, '#ff9a3c', 700); burst(x, y, 14, 1.2, '#ffe27a', 500); }
+      else if (kind === 12) { const t = a * Math.PI / 128; fv.rails.push({ x, y, ux: Math.cos(t), uy: Math.sin(t), c: hue(b), t0: now }); }
+      else if (kind === 13) { const nm = { 3: 'is on a KILLING SPREE', 5: 'is on a RAMPAGE', 7: 'is UNSTOPPABLE', 10: 'is GODLIKE' }[b] || `has ${b} in a row`;
+        fv.flashAt = now; fv.flashTxt = `${nameOf(a)} ${nm}`; addEvent({ room, ts: Date.now(), msg: `${nameOf(a)} ${nm}` }); }
+      else if (kind === 14) addEvent({ room, ts: Date.now(), msg: `FIRST BLOOD: ${nameOf(a)}` });
+      else if (kind === 15) burst(x, y, 14, 1.2, '#c78bff', 500);
     }
     if (fv.evlast === null) { fv.evlast = 0; for (const e of m.ev || []) fv.evlast = e[0]; }
   }
@@ -649,7 +655,7 @@
     const rows = r.players.map((p, i) => {
       const link = p.bot ? '<span class="tagb">BOT</span>'
         : `<span class="${cls(p.rtt, 60, 150)}">${p.rtt ?? '–'} ms</span> · <span class="${p.inHz >= 20 ? 'ok' : p.inHz ? 'warn' : 'bad'}">${p.inHz}/s</span>${kickBtn(p)}`;
-      const state = !p.inGame ? 'title screen' : p.alive ? `${p.hp} hp` : 'respawning';
+      const state = !p.inGame ? 'title screen' : p.alive ? `${p.hp} hp · ${esc(p.weapon || 'plasma')}${p.streak >= 3 ? ` · ${p.streak} streak` : ''}` : 'respawning';
       return `<tr class="${p.alive || !p.inGame ? '' : 'dead'} ${i === 0 && p.frags ? 'lead' : ''}">
         <td>${i + 1}</td><td><span class="sw" style="color:${hue(p.slot)};background:${hue(p.slot)}"></span>${esc(p.name)}</td>
         <td class="num">${p.frags}</td><td class="num">${p.deaths}</td><td>${link}</td><td style="color:var(--dim)">${state}</td></tr>`;
@@ -941,33 +947,53 @@
     if (!M) { sctx.fillStyle = '#6b7a86'; sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.textAlign = 'center'; sctx.fillText('waiting for the arena in room "' + room + '"', w / 2, h / 2); sctx.textAlign = 'start'; return; }
     const dt = Math.min(64, now - (fv.last || now)); fv.last = now;
     const ease = 1 - Math.exp(-dt / 50);
-    const n = M.length, S = Math.min(w, h) / (n + 1), ox = (w - n * S) / 2, oy = (h - n * S) / 2;
+    const n = M.length, S = Math.min(w, h) / (n + 2.5), ox = (w - n * S) / 2, oy = (h - n * S) / 2;
     const X = (x) => ox + x * S, Y = (y) => oy + y * S;
     const WC = { S: '#8a93a6', M: '#5f8fd6', T: '#4ad6a0', '#': '#d07a52' };
     for (let y = 0; y < n; y++) for (let x = 0; x < M[y].length; x++) {
       const ch = M[y][x];
-      if ('.PH'.includes(ch)) continue;
+      if (!'SMT#'.includes(ch)) continue;
       sctx.fillStyle = (WC[ch] || '#8a93a6') + '30'; sctx.fillRect(X(x), Y(y), S, S);
       sctx.strokeStyle = WC[ch] || '#8a93a6'; sctx.lineWidth = d; sctx.shadowColor = sctx.strokeStyle; sctx.shadowBlur = 6 * d;
       for (const [dx, dy, x0, y0, x1, y1] of [[0, -1, 0, 0, 1, 0], [0, 1, 0, 1, 1, 1], [-1, 0, 0, 0, 0, 1], [1, 0, 1, 0, 1, 1]]) {
         const nx = x + dx, ny = y + dy;
-        if (ny < 0 || ny >= n || nx < 0 || nx >= M[ny].length || !'.PH'.includes(M[ny][nx])) continue;
+        if (ny < 0 || ny >= n || nx < 0 || nx >= M[ny].length || 'SMT#'.includes(M[ny][nx])) continue;
         shape(sctx, [[X(x + x0), Y(y + y0)], [X(x + x1), Y(y + y1)]]);
       }
     }
     sctx.shadowBlur = 0;
     let hi = 0;
-    for (let y = 0; y < n; y++) for (let x = 0; x < M[y].length; x++) if (M[y][x] === 'H') {
-      const on = fv.items & (1 << hi++);
-      sctx.strokeStyle = on ? '#9dff7a' : '#9dff7a33'; sctx.lineWidth = 2 * d; const c = S * 0.22;
-      shape(sctx, [[X(x + 0.5) - c, Y(y + 0.5)], [X(x + 0.5) + c, Y(y + 0.5)]]); shape(sctx, [[X(x + 0.5), Y(y + 0.5) - c], [X(x + 0.5), Y(y + 0.5) + c]]);
+    const IC = { H: '#9dff7a', R: '#ff9a3c', G: '#ffe27a', L: '#6ee7ff' };
+    sctx.textAlign = 'center';
+    for (let y = 0; y < n; y++) for (let x = 0; x < M[y].length; x++) {
+      const ch = M[y][x], cx = X(x + 0.5), cy = Y(y + 0.5);
+      if (ch in IC) {
+        const on = fv.items & (1 << hi++), c = S * 0.22;
+        sctx.strokeStyle = on ? IC[ch] : IC[ch] + '33'; sctx.lineWidth = 2 * d;
+        if (ch === 'H') { shape(sctx, [[cx - c, cy], [cx + c, cy]]); shape(sctx, [[cx, cy - c], [cx, cy + c]]); }
+        else { shape(sctx, [[cx - c, cy - c], [cx + c, cy - c], [cx + c, cy + c], [cx - c, cy + c]], true);
+          sctx.fillStyle = sctx.strokeStyle; sctx.font = `${9 * d}px IBM Plex Mono, monospace`; sctx.fillText(ch, cx, cy + 3 * d); }
+      } else if (ch >= 'a' && ch <= 'd') {
+        const r = S * (0.32 + 0.05 * Math.sin(now / 160));
+        sctx.strokeStyle = '#c78bff'; sctx.shadowColor = '#c78bff'; sctx.shadowBlur = 10 * d; sctx.lineWidth = 2 * d;
+        sctx.beginPath(); sctx.arc(cx, cy, r, 0, Math.PI * 2); sctx.stroke(); sctx.shadowBlur = 0;
+        sctx.fillStyle = '#c78bff'; sctx.font = `${9 * d}px IBM Plex Mono, monospace`; sctx.fillText(ch.toUpperCase(), cx, cy + 3 * d);
+      }
+    }
+    sctx.textAlign = 'start';
+    fv.rails = fv.rails.filter((r) => now - r.t0 < 600);
+    for (const r of fv.rails) {
+      let ex = r.x, ey = r.y;
+      for (let i = 0; i < 64 && !'SMT#'.includes((M[Math.floor(ey)] || '')[Math.floor(ex)] || 'S'); i++) { ex += r.ux * 0.5; ey += r.uy * 0.5; }
+      sctx.globalAlpha = 1 - (now - r.t0) / 600; sctx.strokeStyle = r.c; sctx.shadowColor = r.c; sctx.shadowBlur = 12 * d; sctx.lineWidth = 2 * d;
+      shape(sctx, [[X(r.x), Y(r.y)], [X(ex), Y(ey)]]); sctx.shadowBlur = 0; sctx.globalAlpha = 1;
     }
     const fr = Math.min(1.5, (now - fv.at) / Math.max(30, fv.tick));
     for (const b of fv.bolts.values()) {
       const [ux, uy] = [Math.cos(b.a * Math.PI / 512), Math.sin(b.a * Math.PI / 512)];
       const tx = b.x + ux * 0.6 * fr, ty = b.y + uy * 0.6 * fr;
       b.dx += (tx - b.dx) * Math.min(1, ease * 2); b.dy += (ty - b.dy) * Math.min(1, ease * 2);
-      sctx.strokeStyle = hue(b.owner); sctx.shadowColor = hue(b.owner); sctx.shadowBlur = 10 * d; sctx.lineWidth = 3 * d;
+      const bc = b.kind === 1 ? '#ff9a3c' : b.kind === 2 ? '#ffe27a' : hue(b.owner); sctx.strokeStyle = bc; sctx.shadowColor = bc; sctx.shadowBlur = 10 * d; sctx.lineWidth = (b.kind === 1 ? 5 : b.kind === 2 ? 2 : 3) * d;
       shape(sctx, [[X(b.dx - ux * 0.35), Y(b.dy - uy * 0.35)], [X(b.dx), Y(b.dy)]]);
     }
     for (const [id, p] of fv.pilots) {
@@ -988,7 +1014,7 @@
     sctx.globalAlpha = 1;
     sctx.textAlign = 'center'; sctx.font = `600 ${14 * d}px IBM Plex Mono, monospace`; sctx.fillStyle = '#e8fbff';
     const m = Math.floor(fv.clock / 60), sec = fv.clock % 60;
-    sctx.fillText(fv.st === 3 ? `${nameOf(fv.win)} WINS` : fv.st === 1 ? 'GET READY' : `${m}:${String(sec).padStart(2, '0')}`, w / 2, oy - 4 * d);
+    sctx.fillText((fv.mapName ? fv.mapName + ' · ' : '') + (fv.st === 3 ? `${nameOf(fv.win)} WINS` : fv.st === 1 ? 'GET READY' : `${m}:${String(sec).padStart(2, '0')}`), w / 2, oy - 4 * d);
     if (now - fv.flashAt < 1800) { sctx.font = `${12 * d}px IBM Plex Mono, monospace`; sctx.fillStyle = '#ffcf6e'; sctx.fillText(fv.flashTxt, w / 2, oy + n * S + 14 * d); }
     sctx.textAlign = 'start';
   }
