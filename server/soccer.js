@@ -19,7 +19,7 @@ const C = {
   HALF_S: 120, LINEUP_T: 150, GOAL_T: 90, HALF_T: 100, FULL_T: 220, RESTART_MIN: 26,
   HUMANS: 2, TEAMS: 8,
 };
-const TEAM_NAMES = ['NORTHPORT', 'ASHFORD', 'RIVERSIDE', 'KINGSMEN', 'DOCKLANDS', 'HIGHFIELD', 'VALE ROVERS', 'IRONBRIDGE'];
+const TEAM_NAMES = ['ULTIMATE', 'OCEAN', 'CODEMASTERS', 'HEWSON', 'US GOLD', 'GREMLIN', 'IMAGINE', 'DURELL'];
 const ST = { LOBBY: 0, LINEUP: 1, RESTART: 2, PLAY: 3, GOAL: 4, HALF: 5, FULL: 6 };
 const RS = { NONE: 0, KICKOFF: 1, THROW: 2, CORNER: 3, GOALKICK: 4 };
 const ACT = { RUN: 0, KICK: 1, SLIDE: 2, DOWN: 3, DIVE: 4, THROW: 5, CHEER: 6, HEAD: 7 };
@@ -399,7 +399,29 @@ class SoccerRoom {
     this.ball.owner = tk;
     // the taker waits at the spot; the CPU takes it after a while, a human on the button (or after 6 s)
     if (!tk.human) { if (r.t >= r.wait) this.takeRestart(tk, 8 + Math.floor(Math.random() * 12), null); }
-    else if (r.t >= 150) this.takeRestart(tk, 12, tk.human);
+    else {
+      if (r.kind === RS.THROW || r.kind === RS.CORNER) this.moveCross(r, tk, tk.human);
+      if (r.t >= 150) this.takeRestart(tk, 12, tk.human);
+    }
+  }
+
+  // a human taking a throw-in or a corner steers a cross hair on the pitch; the ball goes where it points
+  moveCross(r, tk, h) {
+    const att = this.att(tk.side);
+    if (!r.cross) {
+      r.cross = r.kind === RS.THROW ? [r.spot[0] + (r.spot[0] < C.CX ? 1 : -1) * 90, r.spot[1] + att * 20] : [C.CX, this.oppY(tk.side) - att * 55];
+    }
+    const i = h.input;
+    const mx = ((i & IN.RIGHT) ? 1 : 0) - ((i & IN.LEFT) ? 1 : 0), my = ((i & IN.DOWN) ? 1 : 0) - ((i & IN.UP) ? 1 : 0);
+    let [cx, cy] = r.cross;
+    cx += mx * 3.2; cy += my * 3.2;
+    cx = clamp(cx, C.X0 + 4, C.X1 - 4); cy = clamp(cy, C.Y0 + 4, C.Y1 - 4);
+    if (r.kind === RS.THROW) { cx = r.spot[0] < C.CX ? Math.max(cx, r.spot[0] + 12) : Math.min(cx, r.spot[0] - 12); }
+    const R = r.kind === RS.THROW ? 190 : 320;
+    const d = Math.hypot(cx - tk.x, cy - tk.y);
+    if (d > R) { cx = tk.x + (cx - tk.x) * R / d; cy = tk.y + (cy - tk.y) * R / d; }
+    r.cross = [cx, cy];
+    tk.dir = dirOf(cx - tk.x, cy - tk.y);
   }
 
   takeRestart(p, held, h) {
@@ -407,11 +429,12 @@ class SoccerRoom {
     const kind = r.kind;
     const b = this.ball;
     const power = clamp(held / 24, 0.2, 1);
-    let dx, dy;
+    let dx, dy, crossD = 0;
     if (h) {
       const i = h.input;
       const mx = ((i & IN.RIGHT) ? 1 : 0) - ((i & IN.LEFT) ? 1 : 0), my = ((i & IN.DOWN) ? 1 : 0) - ((i & IN.UP) ? 1 : 0);
-      if (mx || my) [dx, dy] = norm(mx, my);
+      if (r.cross && (kind === RS.THROW || kind === RS.CORNER)) { crossD = Math.hypot(r.cross[0] - p.x, r.cross[1] - p.y); [dx, dy] = norm(r.cross[0] - p.x, r.cross[1] - p.y); }
+      else if (mx || my) [dx, dy] = norm(mx, my);
     }
     const mates = this.sidePlayers(p.side).filter((t) => t !== p);
     const aimAt = (t) => norm(t.x - p.x, t.y - p.y);
@@ -431,7 +454,7 @@ class SoccerRoom {
         [dx, dy] = aimAt(t);
         if (spotInward(r.spot, dx) < 0) dx = -dx;
       }
-      const sp = 70 + power * 80;
+      const sp = crossD ? clamp(60 + crossD * 0.6, 80, 150) : 70 + power * 80;
       this.rs = null; this.setState(ST.PLAY);
       b.owner = null; b.last = p; b.vx = dx * sp; b.vy = dy * sp; b.vz = 110; b.z = 18; b.curveT = 0;
       p.noPick = 25; p.act = ACT.THROW; p.actT = 6;
@@ -442,7 +465,7 @@ class SoccerRoom {
       let [tx, ty] = [C.CX + rnd(-30, 30), this.oppY(p.side) - this.att(p.side) * rnd(40, 70)];
       if (h && dx !== undefined) { [dx, dy] = [dx, dy]; } else [dx, dy] = norm(tx - p.x, ty - p.y);
       const d = Math.hypot(tx - p.x, ty - p.y);
-      const sp = h ? 150 + power * 130 : clamp(d * 1.25, 150, 260);
+      const sp = crossD ? clamp(crossD * 1.25, 150, 260) : h ? 150 + power * 130 : clamp(d * 1.25, 150, 260);
       this.rs = null; this.setState(ST.PLAY);
       this.kickBall(p, dx, dy, sp, 150 + power * 80, EV.KICK, h);
       return;
@@ -916,9 +939,15 @@ class SoccerRoom {
     for (const h of this.humans) {
       if (!h.ws) continue;
       const ctl = h.ctl >= 0 ? h.ctl : 255;
-      this.hooks.send(h.ws, JSON.stringify({ ...base, pl: this.playerList(ctl), you: { side: h.side, ctl, pw: h.charge ? Math.min(255, h.charge * 7) : 0, n: this.humans.length, pick: this.teams[h.side] } }));
+      this.hooks.send(h.ws, JSON.stringify({ ...base, pl: this.playerList(ctl), you: { side: h.side, ctl, pw: h.charge ? Math.min(255, h.charge * 7) : 0, n: this.humans.length, pick: this.teams[h.side], xh: this.crossFor(h), nm: this.humans.filter((q) => q.ctl >= 0).slice(0, 2).map((q) => [q.ctl, q.name]) } }));
     }
     if (this.rosterDirty && now - this.lastRoster > 400) this.sendRoster(now);
+  }
+
+  crossFor(h) {
+    const r = this.rs;
+    if (this.state !== ST.RESTART || !r || !r.cross || r.taker.human !== h) return null;
+    return [Math.round(r.cross[0]), Math.round(r.cross[1])];
   }
 
   rosterList() {
